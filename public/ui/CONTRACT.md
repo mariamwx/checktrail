@@ -52,3 +52,13 @@ Required DOM ids / hooks. Renaming these breaks the game until `/public/logic` i
 ## Hub — `/` (`app/page.tsx`)
 
 Styled via `hub/hub.css`. Class names: `hub`, `hub-inner`, `hub-brand`, `hub-title`, `hub-sub`, `hub-grid`, `hub-card`, `hub-card--c1`, `hub-card--c2`, `hub-card-eyebrow`, `hub-card-name`, `hub-card-desc`.
+
+## Category 1 — 3D layer (optional visuals)
+
+- `#scene-container` — full-bleed Three.js mount (behind `#app`)
+- Scripts (UI only): import map for `three`, then `/ui/category1/scene-bridge.js`
+- Assets: `/ui/category1/assets/*.glb`
+- Preview sandbox: `/ui/preview/` (not required by logic)
+
+Known clips (current test GLBs): `GM_player1_ANIM` on room and player4 exports.
+Hotspot node examples on room: `GJ_Butom_A_v1_P1_OBJ`, `GJ_Butom_B_v1_P1_OBJ`, wheel `GJ_Wheel_*`.
