@@ -1,4 +1,6 @@
 /* Anon Wheel — multiplayer party game (HTML/CSS/JS)
+   UI (placeholder): /public/ui/category1/  — replace markup/CSS/assets there.
+   This file is logic only; keep element ids listed in /public/ui/CONTRACT.md.
    Architecture:
    - DATABASE: rooms + players (scoped by room code / ?room=ABC123)
    - REALTIME postgres_changes: everyone sees the same players in a room
@@ -237,18 +239,47 @@
     return (st?.players || []).filter((p) => !p.kicked);
   }
 
-  function unusedQuestions(st = state) {
-    return (st?.questions || []).filter((q) => !q.used);
+  function minimumQuestionsRequired(st = state) {
+    return Math.max(2, activePlayers(st).length) * 5;
   }
 
-  /** Questions still in play for the wheel (skips are saved for rapid fire) */
-  function wheelQuestions(st = state) {
-    return (st?.questions || []).filter((q) => !q.used && !q.deferred);
+  function poolReady(st = state) {
+    return (st?.questions || []).length >= minimumQuestionsRequired(st);
   }
 
-  /** Leftovers for the top-2 buzzer round */
-  function leftoverQuestions(st = state) {
-    return (st?.questions || []).filter((q) => !q.used);
+  /** Normal-phase questions still remaining */
+  function normalQuestions(st = state) {
+    return (st?.questions || []).filter((q) => !q.used && !q.reservedForRapidFire);
+  }
+
+  /** Reserved rapid-fire bank (same shared pool) */
+  function rapidFireQuestions(st = state) {
+    return (st?.questions || []).filter((q) => q.reservedForRapidFire && !q.used);
+  }
+
+  function getSelections(player, st = state) {
+    if (!player) return 0;
+    if (st?.selectionsById && player.id in st.selectionsById) {
+      return st.selectionsById[player.id] || 0;
+    }
+    return player.selections || 0;
+  }
+
+  function setSelections(player, value) {
+    if (!player || !state) return;
+    player.selections = value;
+    if (!state.selectionsById) state.selectionsById = {};
+    state.selectionsById[player.id] = value;
+  }
+
+  function hydratePlayerStats(players, st = state) {
+    const map = st?.selectionsById || {};
+    return (players || []).map((p) => ({
+      ...p,
+      selections: map[p.id] ?? p.selections ?? 0,
+      skips: p.skips ?? 0,
+      answered: p.answered ?? 0,
+    }));
   }
 
   function getPlayer(id, st = state) {
@@ -269,6 +300,7 @@
       name: row.name,
       answered: row.answered ?? 0,
       skips: row.skips ?? 0,
+      selections: 0,
       kicked: !!row.kicked,
       isHost: !!row.is_host,
     };
@@ -280,14 +312,15 @@
       roomCode,
       hostId,
       questions,
-      finalsQuestions,
       questionEndsAt,
       currentPlayerId,
       currentQuestionId,
       spinToken,
       spinTargetIndex,
-      lastPickedId,
-      pickCounts,
+      selectionsById,
+      rapidFireReserve,
+      startingPlayerCount,
+      questionsLocked,
       finals,
       winnerId,
       revealForId,
@@ -299,14 +332,15 @@
       roomCode,
       hostId,
       questions,
-      finalsQuestions: finalsQuestions || [],
       questionEndsAt,
       currentPlayerId,
       currentQuestionId,
       spinToken,
       spinTargetIndex,
-      lastPickedId: lastPickedId || null,
-      pickCounts: pickCounts || {},
+      selectionsById: selectionsById || {},
+      rapidFireReserve: rapidFireReserve || 0,
+      startingPlayerCount: startingPlayerCount || 0,
+      questionsLocked: !!questionsLocked,
       finals,
       winnerId,
       revealForId,
@@ -316,18 +350,18 @@
   }
 
   function mergeGameIntoState(game, players) {
-    return {
-      ...createState(game.roomCode || "------", players[0] || {
-        id: "tmp",
-        name: "…",
-        answered: 0,
-        skips: 0,
-        kicked: false,
-        isHost: false,
-      }),
-      ...game,
-      players,
-    };
+    const base = createState(game.roomCode || "------", players[0] || {
+      id: "tmp",
+      name: "…",
+      answered: 0,
+      skips: 0,
+      selections: 0,
+      kicked: false,
+      isHost: false,
+    });
+    const merged = { ...base, ...game };
+    merged.players = hydratePlayerStats(players, merged);
+    return merged;
   }
 
   // ---------- state factory ----------
@@ -338,14 +372,15 @@
       hostId: hostPlayer.id,
       players: [hostPlayer],
       questions: [],
-      finalsQuestions: [],
       questionEndsAt: null,
       currentPlayerId: null,
       currentQuestionId: null,
       spinToken: 0,
       spinTargetIndex: 0,
-      lastPickedId: null,
-      pickCounts: {},
+      selectionsById: {},
+      rapidFireReserve: 0,
+      startingPlayerCount: 0,
+      questionsLocked: false,
       finals: null,
       winnerId: null,
       revealForId: null,
@@ -829,6 +864,7 @@
           name: String(action.player.name || "").trim(),
           answered: 0,
           skips: 0,
+          selections: 0,
           kicked: false,
           isHost: false,
         });
@@ -839,12 +875,13 @@
         if (state.phase !== "lobby") return;
         if (activePlayers().length < 2) return;
         state.phase = "questions";
+        state.questionsLocked = false;
         state.questionEndsAt = Date.now() + QUESTION_SECONDS * 1000;
         publish();
         break;
       }
       case "addQuestion": {
-        if (state.phase !== "questions") return;
+        if (state.phase !== "questions" || state.questionsLocked) return;
         const text = String(action.text || "").trim();
         if (!text) return;
         const author = getPlayer(action.playerId);
@@ -855,8 +892,7 @@
           authorId: author.id,
           authorName: author.name,
           used: false,
-          deferred: false,
-          skippedBy: [],
+          reservedForRapidFire: false,
         };
         state.questions.push(entry);
         upsertQuestionRow(entry, "wheel");
@@ -865,7 +901,7 @@
       }
       case "questionsDone": {
         if (state.phase !== "questions") return;
-        beginWheelRound();
+        lockPoolAndStartNormal();
         break;
       }
       case "skip": {
@@ -875,11 +911,11 @@
         const q = state.questions.find((x) => x.id === state.currentQuestionId);
         if (!player || !q) return;
         player.skips += 1;
-        // Skipped questions leave the wheel and wait for rapid fire
-        q.deferred = true;
-        if (!Array.isArray(q.skippedBy)) q.skippedBy = [];
-        if (!q.skippedBy.includes(player.id)) q.skippedBy.push(player.id);
-        if (player.skips >= MAX_SKIPS) player.kicked = true;
+        // Consume this normal-phase question (does not move into rapid-fire reserve)
+        q.used = true;
+        if (player.skips >= MAX_SKIPS && canEliminatePlayer(player)) {
+          player.kicked = true;
+        }
         logQuestionOutcome({ question: q, player, pot: "wheel", outcome: "skipped" });
         state.currentPlayerId = null;
         state.currentQuestionId = null;
@@ -945,57 +981,79 @@
     }
   }
 
+  function canEliminatePlayer(player) {
+    // Exactly 2 players at game start → never eliminate via skips
+    if (state.startingPlayerCount === 2) return false;
+    // Never allow zero eligible wheel players
+    const others = activePlayers().filter((p) => p.id !== player.id);
+    return others.length >= 1;
+  }
+
   function shouldGoToFinals() {
-    const alive = activePlayers();
-    if (alive.length < 2) return true;
-    // Wheel empties when every leftover was skipped (saved for rapid fire) or answered
-    if (wheelQuestions().length === 0) return true;
+    // Deterministic: normal pool exhausted (not skips / eliminations)
+    if (normalQuestions().length === 0) return true;
+    if (activePlayers().length === 0) return true;
     return false;
+  }
+
+  function lockPoolAndStartNormal() {
+    const players = activePlayers();
+    if (players.length < 2) {
+      toast("Need at least 2 players");
+      return;
+    }
+    const minQ = players.length * 5;
+    if (state.questions.length < minQ) {
+      toast("Need at least " + minQ + " questions before starting");
+      return;
+    }
+
+    // Lock pool — no more adds
+    state.questionsLocked = true;
+    state.startingPlayerCount = players.length;
+    state.selectionsById = {};
+    state.players.forEach((p) => {
+      p.selections = 0;
+      state.selectionsById[p.id] = 0;
+    });
+
+    // Shuffle once, then reserve rapid-fire slice from the SAME pool
+    shuffleInPlace(state.questions);
+    const reserve = Math.max(
+      players.length * 2,
+      Math.ceil(state.questions.length * 0.2)
+    );
+    const reserveCount = Math.min(reserve, state.questions.length);
+    const cut = state.questions.length - reserveCount;
+    state.questions.forEach((q, i) => {
+      q.reservedForRapidFire = i >= cut;
+      q.used = false;
+    });
+    state.rapidFireReserve = reserveCount;
+
+    beginWheelRound();
   }
 
   function beginWheelRound() {
     const alive = wheelPlayers();
-    const left = wheelQuestions();
+    const left = normalQuestions();
 
-    if (alive.length < 2 || left.length === 0) {
+    if (left.length === 0 || alive.length === 0) {
       startFinals();
       return;
     }
 
-    // Avoid back-to-back picks when someone else can go
-    let pool = alive.slice();
-    if (state.lastPickedId && pool.length > 1) {
-      const withoutLast = pool.filter((p) => p.id !== state.lastPickedId);
-      if (withoutLast.length) pool = withoutLast;
-    }
+    // Truly random wheel — no balancing, repeats allowed
+    const player = alive[(Math.random() * alive.length) | 0];
+    setSelections(player, getSelections(player) + 1);
 
-    // Weight toward people who have been picked less this game
-    const counts = state.pickCounts || {};
-    const weights = pool.map((p) => {
-      const c = counts[p.id] || 0;
-      return 1 / (1 + c * 1.35);
-    });
-    const total = weights.reduce((a, b) => a + b, 0);
-    let r = Math.random() * total;
-    let player = pool[pool.length - 1];
-    for (let i = 0; i < pool.length; i++) {
-      r -= weights[i];
-      if (r <= 0) {
-        player = pool[i];
-        break;
-      }
-    }
-
-    const q = left[(Math.random() * left.length) | 0];
+    // Next question in shuffled normal order
+    const q = left[0];
 
     const targetIndex = Math.max(
       0,
       alive.findIndex((p) => p.id === player.id)
     );
-
-    if (!state.pickCounts) state.pickCounts = {};
-    state.pickCounts[player.id] = (state.pickCounts[player.id] || 0) + 1;
-    state.lastPickedId = player.id;
 
     state.phase = "spinning";
     state.spinTargetIndex = targetIndex;
@@ -1012,10 +1070,42 @@
     }, SPIN_MS + 180);
   }
 
-  function startFinals() {
-    const ranked = [...activePlayers()].sort((a, b) => b.answered - a.answered || a.name.localeCompare(b.name));
+  /** Randomly pick count players from a tied group */
+  function pickRandomFrom(arr, count) {
+    const pool = shuffleInPlace([...arr]);
+    return pool.slice(0, count);
+  }
 
-    if (ranked.length === 0) {
+  /**
+   * Top 2 by wheel selections. Within a tied tier, choose randomly.
+   */
+  function pickFinalistsBySelections(candidates) {
+    if (candidates.length <= 2) return candidates.slice(0, 2);
+
+    const byScore = new Map();
+    candidates.forEach((p) => {
+      const s = getSelections(p);
+      if (!byScore.has(s)) byScore.set(s, []);
+      byScore.get(s).push(p);
+    });
+    const scores = [...byScore.keys()].sort((a, b) => b - a);
+    const picked = [];
+    for (const score of scores) {
+      const tier = byScore.get(score);
+      const need = 2 - picked.length;
+      if (need <= 0) break;
+      if (tier.length <= need) {
+        picked.push(...shuffleInPlace([...tier]));
+      } else {
+        picked.push(...pickRandomFrom(tier, need));
+      }
+    }
+    return picked.slice(0, 2);
+  }
+
+  function startFinals() {
+    const all = state.players || [];
+    if (all.length === 0) {
       state.phase = "end";
       state.winnerId = null;
       state.revealForId = null;
@@ -1023,32 +1113,42 @@
       return;
     }
 
-    if (ranked.length === 1) {
+    // 2-player games: both are automatic finalists
+    let candidates;
+    if (state.startingPlayerCount === 2) {
+      candidates = all.filter((p) => !p.kicked);
+      if (candidates.length < 2) candidates = all.slice(0, 2);
+    } else {
+      candidates = activePlayers();
+      if (candidates.length < 2) {
+        const kicked = all
+          .filter((p) => p.kicked)
+          .sort((a, b) => getSelections(b) - getSelections(a));
+        candidates = [...candidates, ...kicked];
+      }
+    }
+
+    if (candidates.length === 0) {
       state.phase = "end";
-      state.winnerId = ranked[0].id;
-      state.revealForId = ranked[0].id;
+      state.winnerId = null;
       publish();
       return;
     }
 
-    // Top 2 by answers; break ties randomly among tied for #2 if needed
-    const topScore = ranked[0].answered;
-    const firstTier = ranked.filter((p) => p.answered === topScore);
-    let a;
-    let b;
-    if (firstTier.length >= 2) {
-      const shuffled = shuffleInPlace([...firstTier]);
-      a = shuffled[0];
-      b = shuffled[1];
-    } else {
-      a = ranked[0];
-      const secondScore = ranked[1].answered;
-      const secondTier = ranked.filter((p) => p.answered === secondScore && p.id !== a.id);
-      b = secondTier[(Math.random() * secondTier.length) | 0];
+    if (candidates.length === 1) {
+      state.phase = "end";
+      state.winnerId = candidates[0].id;
+      state.revealForId = candidates[0].id;
+      publish();
+      return;
     }
 
-    // Top 2 by answers → auto rapid fire with leftover questions from the start pot
-    state.revealForId = ranked[0].id;
+    const finalists = pickFinalistsBySelections(candidates);
+    const a = finalists[0];
+    const b = finalists[1];
+    const topTier = Math.max(...candidates.map((p) => getSelections(p)));
+    const revealPool = candidates.filter((p) => getSelections(p) === topTier);
+    state.revealForId = pickRandomFrom(revealPool, 1)[0].id;
     state._finalistAId = a.id;
     state._finalistBId = b.id;
     beginFinalsMatch();
@@ -1066,20 +1166,19 @@
       return;
     }
 
-    const bank = leftoverQuestions();
+    const bank = rapidFireQuestions();
     if (bank.length === 0) {
-      // Nothing left to buzz — crown the best answerer from the wheel
       state.winnerId = state.revealForId || a.id;
       state.phase = "end";
       state.currentPlayerId = null;
       state.currentQuestionId = null;
       state.finals = null;
       publish();
-      toast("No leftover questions — crowning the top answerer");
+      toast("No rapid-fire questions reserved — crowning top selectee");
       return;
     }
 
-    const finalsQs = shuffleInPlace([...bank]).slice(0, 12);
+    const finalsQs = bank.slice();
 
     state.phase = "finals";
     state.currentPlayerId = null;
@@ -1299,7 +1398,7 @@
       li.className = "player-pill";
       if (p.isHost) li.classList.add("host");
       if (p.id === me.id) li.classList.add("you");
-      li.innerHTML = `<span class="name">${escapeHtml(p.name)}</span><span class="meta">answered ${p.answered} · skips ${p.skips}/${MAX_SKIPS}${p.id === me.id ? " · you" : ""}</span>`;
+      li.innerHTML = `<span class="name">${escapeHtml(p.name)}</span><span class="meta">${p.id === me.id ? "you" : p.isHost ? "host" : "joined"}</span>`;
       els.playerList.appendChild(li);
     });
 
@@ -1309,30 +1408,70 @@
       : "Waiting for players…";
     els.lobbyHint.textContent = ready
       ? me.isHost
-        ? "You’re the host — start when everyone is in."
-        : "Waiting for the host to start the question round."
+        ? "You’re the host — open the question pool when everyone is in."
+        : "Waiting for the host to open the question pool."
       : "Need at least 2 players to start.";
 
     els.btnStartQuestions.hidden = !me.isHost;
     els.btnStartQuestions.disabled = !ready;
+    if (els.btnStartQuestions) {
+      els.btnStartQuestions.textContent = "Open question pool";
+    }
   }
 
   function renderQuestions() {
-    const remaining = ((state.questionEndsAt || Date.now()) - Date.now()) / 1000;
-    els.questionTimer.textContent = formatTime(remaining);
-    els.questionTimer.classList.toggle("urgent", remaining <= 30);
-    els.questionCount.textContent = String(state.questions?.length || 0);
+    const nPlayers = activePlayers().length;
+    const minQ = nPlayers * 5;
+    const have = state.questions?.length || 0;
+    const ready = have >= minQ;
+    const remaining =
+      ((state.questionEndsAt || Date.now() + QUESTION_SECONDS * 1000) - Date.now()) /
+      1000;
+
+    if (els.questionTimer) {
+      els.questionTimer.textContent = formatTime(remaining);
+      els.questionTimer.classList.toggle("urgent", remaining <= 30);
+    }
+    els.questionCount.textContent = String(have);
 
     const title = document.querySelector("#screen-questions .section-title");
     const sub = document.querySelector("#screen-questions .section-sub");
-    if (title) title.textContent = "Drop your questions";
+    if (title) title.textContent = "Question pool";
     if (sub) {
-      sub.textContent =
-        "Totally anonymous — nobody sees who wrote what (yet). One pot for the whole game.";
+      sub.textContent = ready
+        ? "Pool ready! Keep adding until the timer ends, or the host can start now."
+        : `One shared pot · at least ${minQ} questions (${nPlayers}×5) · ${formatTime(Math.max(0, remaining))} left to add more.`;
     }
 
-    const hostBtn = document.getElementById("btn-begin-finals");
-    if (hostBtn) hostBtn.hidden = true;
+    const statusEl = document.getElementById("pool-status");
+    if (statusEl) {
+      statusEl.textContent = ready
+        ? `✓ Enough questions to start · ${have} / ${minQ}`
+        : `${have} / ${minQ} minimum questions`;
+      statusEl.classList.toggle("pool-ready", ready);
+    }
+
+    // Host can start early once minimum is met
+    let hostBtn = document.getElementById("btn-start-game");
+    if (!hostBtn && els.questionForm?.parentElement) {
+      hostBtn = document.createElement("button");
+      hostBtn.type = "button";
+      hostBtn.id = "btn-start-game";
+      hostBtn.className = "btn btn-primary btn-lg";
+      hostBtn.style.marginTop = "0.75rem";
+      els.questionForm.parentElement.appendChild(hostBtn);
+    }
+    if (hostBtn) {
+      hostBtn.hidden = !me.isHost;
+      hostBtn.disabled = !ready || !!state.questionsLocked;
+      hostBtn.textContent = ready
+        ? `Start game now (${have} in pool)`
+        : `Need ${minQ - have} more question${minQ - have === 1 ? "" : "s"}`;
+      hostBtn.onclick = () => send({ type: "questionsDone" });
+    }
+
+    const legacyBtn = document.getElementById("btn-begin-finals");
+    if (legacyBtn) legacyBtn.hidden = true;
 
     els.myQuestions.innerHTML = "";
     myLocalQuestions.forEach((item) => {
@@ -1341,14 +1480,31 @@
       els.myQuestions.appendChild(li);
     });
 
+    if (els.questionInput) els.questionInput.disabled = !!state.questionsLocked;
+    const addBtn = els.questionForm?.querySelector('button[type="submit"]');
+    if (addBtn) addBtn.disabled = !!state.questionsLocked;
+
     questionTick = setInterval(() => {
-      if (!state || state.phase !== "questions") return;
+      if (!state || state.phase !== "questions" || state.questionsLocked) return;
       const left = ((state.questionEndsAt || Date.now()) - Date.now()) / 1000;
-      els.questionTimer.textContent = formatTime(left);
-      els.questionTimer.classList.toggle("urgent", left <= 30);
-      if (left <= 0 && me.isHost) {
-        clearInterval(questionTick);
+      if (els.questionTimer) {
+        els.questionTimer.textContent = formatTime(left);
+        els.questionTimer.classList.toggle("urgent", left <= 30);
+      }
+      if (left > 0) return;
+      if (!me.isHost) return;
+      clearInterval(questionTick);
+      questionTick = null;
+      const minNeeded = activePlayers().length * 5;
+      if ((state.questions?.length || 0) >= minNeeded) {
         handleAction({ type: "questionsDone" });
+      } else {
+        // Keep the window open until the minimum is met
+        state.questionEndsAt = Date.now() + QUESTION_SECONDS * 1000;
+        publish();
+        toast(
+          `Still need ${(minNeeded - (state.questions?.length || 0))} more questions — timer extended`
+        );
       }
     }, 250);
   }
@@ -1359,7 +1515,7 @@
     alive.forEach((p) => {
       const chip = document.createElement("span");
       chip.className = "score-chip";
-      chip.innerHTML = `${escapeHtml(p.name)} · answered <strong>${p.answered}</strong> · skips <strong>${p.skips}/${MAX_SKIPS}</strong>`;
+      chip.innerHTML = `${escapeHtml(p.name)} · picks <strong>${getSelections(p)}</strong> · skips <strong>${p.skips}/${MAX_SKIPS}</strong>`;
       els.scoreStrip.appendChild(chip);
     });
 
@@ -1410,7 +1566,10 @@
       if (isMe) {
         const warn = document.createElement("p");
         warn.className = "skip-warn";
-        warn.textContent = `Your score — answered: ${picked.answered} · skips: ${picked.skips}/${MAX_SKIPS} (${MAX_SKIPS - picked.skips} left before you’re out)`;
+        warn.textContent =
+          state.startingPlayerCount === 2
+            ? `Skips: ${picked.skips} (no elimination in a 2-player game)`
+            : `Picks: ${getSelections(picked)} · skips: ${picked.skips}/${MAX_SKIPS} (${MAX_SKIPS - picked.skips} left before you’re out)`;
         panel.appendChild(warn);
 
         const row = document.createElement("div");
@@ -1474,7 +1633,7 @@
     els.finalsControls.innerHTML = "";
 
     if (f.phase === "ready") {
-      els.finalsPhaseLabel.textContent = "Finale";
+      els.finalsPhaseLabel.textContent = "Rapid Fire";
       els.finalsQuestion.textContent = `${a?.name} vs ${b?.name} — rapid-fire buzzers. First to buzz answers out loud.`;
       els.finalsTimer.textContent = formatTime(FINALS_SECONDS);
       if (me.isHost) {
@@ -1537,14 +1696,16 @@
     const revealFor = getPlayer(state.revealForId);
     els.endTitle.textContent = winner ? `${winner.name} takes it` : "That’s a wrap";
     els.endSub.textContent = revealFor
-      ? `${revealFor.name} earned the author reveal (most answers in the main round).`
+      ? `${revealFor.name} earned the author reveal (most wheel picks in the main round).`
       : "Thanks for playing.";
 
-    const ranked = [...state.players].sort((a, b) => b.answered - a.answered);
+    const ranked = [...state.players].sort(
+      (a, b) => getSelections(b) - getSelections(a) || b.answered - a.answered
+    );
     els.standings.innerHTML = "";
     ranked.forEach((p, i) => {
       const li = document.createElement("li");
-      li.innerHTML = `<span>#${i + 1} ${escapeHtml(p.name)}${p.kicked ? " (out)" : ""}</span><span>${p.answered} answered · ${p.skips} skips</span>`;
+      li.innerHTML = `<span>#${i + 1} ${escapeHtml(p.name)}${p.kicked ? " (out)" : ""}</span><span>${getSelections(p)} picks · ${p.answered} answered · ${p.skips} skips</span>`;
       els.standings.appendChild(li);
     });
 
@@ -1554,14 +1715,20 @@
       els.revealList.innerHTML = "";
       (state.questions || []).forEach((q) => {
         const li = document.createElement("li");
-        const tag = q.deferred ? "Leftover" : q.used ? "Answered" : "Unused";
+        const tag = q.reservedForRapidFire
+          ? q.used
+            ? "Rapid fire"
+            : "Rapid fire (unused)"
+          : q.used
+            ? "Answered"
+            : "Unused";
         li.innerHTML = `<span class="q">[${tag}] ${escapeHtml(q.text)}</span><span class="by">— ${escapeHtml(q.authorName || "?")}</span>`;
         els.revealList.appendChild(li);
       });
     } else {
       els.revealPanel.hidden = true;
       if (!canReveal) {
-        els.endSub.textContent += " Only the top answerer can see who wrote each question.";
+        els.endSub.textContent += " Only the top selectee can see who wrote each question.";
       }
     }
   }
@@ -1579,14 +1746,17 @@
     if (!state) {
       state = mergeGameIntoState({ roomCode: sync?.code, phase: "lobby" }, players);
     } else {
-      state = { ...state, players };
+      state = {
+        ...state,
+        players: hydratePlayerStats(players, state),
+      };
     }
     render();
   }
 
   function applyGameState(st) {
     const players = state?.players || st.players || [];
-    state = { ...st, players };
+    state = mergeGameIntoState(st, players);
     render();
   }
 
@@ -1607,6 +1777,7 @@
       name,
       answered: 0,
       skips: 0,
+      selections: 0,
       kicked: false,
       isHost: true,
     };
@@ -1734,6 +1905,7 @@
           name: me.name,
           answered: 0,
           skips: 0,
+          selections: 0,
           kicked: false,
           isHost: true,
         };
@@ -1747,6 +1919,7 @@
           name: me.name,
           answered: 0,
           skips: 0,
+          selections: 0,
           kicked: false,
           isHost: false,
         };

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="/ui/category1/styles.css" />
 </head>
 <body>
   <div class="bg-noise" aria-hidden="true"></div>
@@ -40,7 +40,7 @@
         <p class="hint" style="margin-top:1.25rem;max-width:42ch">
           Category 1 data lives in the Supabase schema <code>category_one</code> (rooms, players, questions). Share <code>?room=ABC123</code> so everyone joins the same lobby.
         </p>
-        <p class="hint"><a href="category2.html" style="color:inherit">Category 2: Mirror Vote →</a></p>
+        <p class="hint"><a href="/category2.html" style="color:inherit">Category 2: Mirror Vote →</a></p>
       </div>
     </section>
     <!-- LOBBY -->
@@ -63,7 +63,7 @@
         <aside class="lobby-aside">
           <p class="aside-label" id="lobby-status">Waiting for players…</p>
           <button type="button" class="btn btn-primary btn-lg" id="btn-start-questions" hidden>
-            Start 3-minute question round
+            Open question pool
           </button>
           <p class="hint" id="lobby-hint">Need at least 2 players to start.</p>
         </aside>
@@ -79,20 +79,20 @@
 
       <div class="questions-layout">
         <div>
-          <h2 class="section-title">Drop your questions</h2>
-          <p class="section-sub">Totally anonymous — nobody sees who wrote what (yet).</p>
+          <h2 class="section-title">Question pool</h2>
+          <p class="section-sub">One shared pot. Minimum = players × 5. You have 3 minutes to add as many as you want.</p>
 
           <form id="question-form" class="question-form">
-            <textarea id="question-input" rows="3" maxlength="200" placeholder="What’s something you’ve never told this group?" required></textarea>
+            <textarea id="question-input" rows="3" maxlength="200" placeholder="Add a question…" required></textarea>
             <button type="submit" class="btn btn-primary">Add question</button>
           </form>
           <p id="question-feedback" class="feedback" hidden></p>
         </div>
 
         <aside class="questions-aside">
-          <p class="stat-label">Questions in the pot</p>
+          <p class="stat-label">Question pool</p>
           <p class="stat-value" id="question-count">0</p>
-          <p class="hint">One shared pot. The wheel uses them first. Whatever’s left goes to the top-2 rapid-fire round.</p>
+          <p class="hint" id="pool-status">0 / 10 minimum questions</p>
           <ul id="my-questions" class="my-questions"></ul>
         </aside>
       </div>
@@ -124,7 +124,7 @@
     <section id="screen-finals" class="screen">
       <header class="topbar">
         <p class="brand-sm">Anon Wheel</p>
-        <p class="finals-tag">Rapid-fire finale</p>
+        <p class="finals-tag">Rapid Fire</p>
       </header>
 
       <div class="finals-layout">
@@ -184,7 +184,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="supabase-config.js"></script>
-  <script src="app.js"></script>
+  <script src="/logic/supabase-config.js"></script>
+  <script src="/logic/category1.js"></script>
 </body>
 </html>

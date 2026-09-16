@@ -528,9 +528,9 @@ textarea {
   accent-color: var(--lime);
 }
 
-.feedback {
-  color: var(--ok);
-  margin-top: 0.75rem;
+.pool-ready {
+  color: var(--ok, #3dff9a);
+  font-weight: 600;
 }
 
 .stat-value {

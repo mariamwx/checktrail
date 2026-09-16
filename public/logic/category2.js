@@ -1,4 +1,6 @@
 /* Category 2 — Mirror Vote
+   UI (placeholder): /public/ui/category2/  — replace markup/CSS/assets there.
+   This file is logic only; keep element ids listed in /public/ui/CONTRACT.md.
    Schema: category_two
    Players get the same questions in different shuffled orders.
    Votes are anonymous. Results = bar charts + personal trait body.
