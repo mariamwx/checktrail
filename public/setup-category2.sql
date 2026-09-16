@@ -11,6 +11,8 @@ create table if not exists category_two.rooms (
   host_id text not null,
   phase text not null default 'lobby' check (phase in ('lobby', 'playing', 'results')),
   question_count int not null default 20,
+  deck_version text not null default 'philosophical'
+    check (deck_version in ('philosophical', 'dirty')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -30,7 +32,9 @@ create table if not exists category_two.question_bank (
   trait_key text not null,
   trait_label text not null,
   body_part text not null default 'torso',
-  sort_order int not null default 0
+  sort_order int not null default 0,
+  version text not null default 'philosophical'
+    check (version in ('philosophical', 'dirty'))
 );
 
 create table if not exists category_two.votes (

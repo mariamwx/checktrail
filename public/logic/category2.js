@@ -39,6 +39,10 @@
     lobbyStatus: $("#lobby-status"),
     btnStart: $("#btn-start"),
     lobbyHint: $("#lobby-hint"),
+    deckPicker: $("#deck-picker"),
+    deckPhilosophical: $("#deck-philosophical"),
+    deckDirty: $("#deck-dirty"),
+    deckBadge: $("#deck-badge"),
     progressChip: $("#progress-chip"),
     questionText: $("#question-text"),
     nomineeGrid: $("#nominee-grid"),
@@ -81,6 +85,7 @@
   let channel = null;
   let players = [];
   let questions = [];
+  let roomDeckVersion = "philosophical";
   let myOrder = [];
   let myIndex = 0;
   let myVotes = {}; // questionId -> nomineeId
@@ -135,14 +140,60 @@
     return url.toString();
   }
 
-  async function loadQuestionBank() {
+  async function loadQuestionBank(version = roomDeckVersion) {
+    const deck = version === "dirty" ? "dirty" : "philosophical";
     const { data, error } = await db()
       .from("question_bank")
       .select("*")
+      .eq("version", deck)
       .order("sort_order", { ascending: true });
     if (error) throw new Error(error.message);
     questions = data || [];
-    if (!questions.length) throw new Error("No Category 2 questions found in Supabase.");
+    roomDeckVersion = deck;
+    if (!questions.length) {
+      throw new Error(`No ${deck} questions found in Supabase.`);
+    }
+  }
+
+  function deckLabel(version = roomDeckVersion) {
+    return version === "dirty" ? "Dirty" : "Philosophical";
+  }
+
+  async function reshuffleAllPlayers() {
+    const ids = questions.map((q) => q.id);
+    for (const p of players) {
+      const order = shuffle(ids);
+      const { error } = await db()
+        .from("players")
+        .update({ question_order: order })
+        .eq("id", p.id);
+      if (error) throw new Error(error.message);
+      if (p.id === me.id) myOrder = order;
+    }
+  }
+
+  async function setDeckVersion(version) {
+    if (!me.isHost || phase !== "lobby" || !roomCode) return;
+    const deck = version === "dirty" ? "dirty" : "philosophical";
+    if (deck === roomDeckVersion && questions.length) {
+      renderLobby();
+      return;
+    }
+    await loadQuestionBank(deck);
+    const { error } = await db()
+      .from("rooms")
+      .update({
+        deck_version: deck,
+        question_count: questions.length,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("code", roomCode);
+    if (error) throw new Error(error.message);
+    await refreshPlayers({ silent: true });
+    await reshuffleAllPlayers();
+    await refreshPlayers({ silent: true });
+    renderLobby();
+    toast(`${deckLabel(deck)} deck selected`);
   }
 
   async function refreshPlayers(opts = {}) {
@@ -169,10 +220,23 @@
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!data) return;
+
+    const nextDeck =
+      data.deck_version === "dirty" ? "dirty" : "philosophical";
+    if (data.phase === "lobby" && nextDeck !== roomDeckVersion) {
+      await loadQuestionBank(nextDeck);
+      await refreshPlayers({ silent: true });
+      const self = players.find((p) => p.id === me.id);
+      if (self?.question_order?.length) myOrder = self.question_order;
+      renderLobby();
+    }
+
     if (data.phase === "playing" && phase === "lobby") {
+      if (nextDeck !== roomDeckVersion) await loadQuestionBank(nextDeck);
       phase = "playing";
       await beginPlaying();
     } else if (data.phase === "results") {
+      if (nextDeck !== roomDeckVersion) await loadQuestionBank(nextDeck);
       phase = "results";
       await showResults();
     }
@@ -209,18 +273,33 @@
       els.playerList.appendChild(li);
     });
     const ready = players.length >= 2;
-    els.lobbyStatus.textContent = `${players.length} player${players.length === 1 ? "" : "s"}`;
+    els.lobbyStatus.textContent = `${players.length} player${players.length === 1 ? "" : "s"} · ${deckLabel()} deck`;
     els.lobbyHint.textContent = ready
       ? me.isHost
-        ? "Start when ready — each player gets a unique question order."
+        ? "Pick a deck, then start — each player gets a unique question order."
         : "Waiting for the host to start."
       : "Need at least 2 players.";
     els.btnStart.hidden = !me.isHost;
     els.btnStart.disabled = !ready;
+
+    if (els.deckPicker) {
+      els.deckPicker.hidden = !me.isHost;
+      els.deckPhilosophical?.classList.toggle(
+        "is-selected",
+        roomDeckVersion === "philosophical"
+      );
+      els.deckDirty?.classList.toggle("is-selected", roomDeckVersion === "dirty");
+    }
+    if (els.deckBadge) {
+      els.deckBadge.hidden = !!me.isHost;
+      els.deckBadge.innerHTML = me.isHost
+        ? ""
+        : `Deck: <strong>${escapeHtml(deckLabel())}</strong>`;
+    }
   }
 
   async function createRoom(name) {
-    await loadQuestionBank();
+    await loadQuestionBank("philosophical");
     const code = makeRoomCode();
     me = { id: uid(), name, isHost: true };
     roomCode = code;
@@ -231,6 +310,7 @@
       host_id: me.id,
       phase: "lobby",
       question_count: questions.length,
+      deck_version: "philosophical",
     });
     if (roomErr) throw new Error(roomErr.message);
 
@@ -258,7 +338,6 @@
     if (code.length < 4) throw new Error("Enter a valid room code.");
     const cleanName = String(name || "").trim();
     if (!cleanName) throw new Error("Enter a name.");
-    await loadQuestionBank();
 
     const { data: room, error: roomErr } = await db()
       .from("rooms")
@@ -268,6 +347,10 @@
     if (roomErr) throw new Error(roomErr.message);
     if (!room) throw new Error("Room not found.");
     if (room.phase !== "lobby") throw new Error("This room already started.");
+
+    await loadQuestionBank(
+      room.deck_version === "dirty" ? "dirty" : "philosophical"
+    );
 
     const { data: existing, error: existingErr } = await db()
       .from("players")
@@ -305,7 +388,6 @@
   async function resumeRoom(code) {
     const session = loadSession(code);
     if (!session?.id) return false;
-    await loadQuestionBank();
 
     const { data: room, error: roomErr } = await db()
       .from("rooms")
@@ -316,6 +398,10 @@
       clearSession(code);
       return false;
     }
+
+    await loadQuestionBank(
+      room.deck_version === "dirty" ? "dirty" : "philosophical"
+    );
 
     const { data: player } = await db()
       .from("players")
@@ -355,9 +441,16 @@
 
   async function startGame() {
     if (!me.isHost) return;
+    // Lock in the chosen deck before playing
+    await loadQuestionBank(roomDeckVersion);
     const { error } = await db()
       .from("rooms")
-      .update({ phase: "playing", updated_at: new Date().toISOString() })
+      .update({
+        phase: "playing",
+        deck_version: roomDeckVersion,
+        question_count: questions.length,
+        updated_at: new Date().toISOString(),
+      })
       .eq("code", roomCode);
     if (error) throw new Error(error.message);
     phase = "playing";
@@ -859,6 +952,21 @@
       await startGame();
     } catch (err) {
       toast(err.message || "Could not start");
+    }
+  });
+
+  els.deckPhilosophical?.addEventListener("click", async () => {
+    try {
+      await setDeckVersion("philosophical");
+    } catch (err) {
+      toast(err.message || "Could not switch deck");
+    }
+  });
+  els.deckDirty?.addEventListener("click", async () => {
+    try {
+      await setDeckVersion("dirty");
+    } catch (err) {
+      toast(err.message || "Could not switch deck");
     }
   });
 

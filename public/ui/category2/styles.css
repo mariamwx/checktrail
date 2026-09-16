@@ -1,15 +1,15 @@
 :root {
-  --ink: #05070b;
-  --panel: #12151c;
-  --line: rgba(255, 255, 255, 0.1);
-  --text: #eef2f7;
-  --muted: #8b93a7;
-  --blue: #2f5fad;
-  --blue-bar: #355f9c;
-  --accent: #c8f542;
-  --accent-ink: #102000;
-  --font-display: "Bebas Neue", sans-serif;
-  --font-body: "Outfit", system-ui, sans-serif;
+  --ink: #000000;
+  --panel: #141210;
+  --line: rgba(242, 235, 227, 0.14);
+  --text: #f2ebe3;
+  --muted: #9a9088;
+  --blue: #9aa7b0;
+  --blue-bar: #7a8790;
+  --accent: #a3b9a8;
+  --accent-ink: #162018;
+  --font-display: "Syne", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, sans-serif;
 }
 
 *,
@@ -41,10 +41,7 @@ input[type="text"],
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background:
-    radial-gradient(ellipse 60% 40% at 20% 0%, rgba(47, 95, 173, 0.22), transparent 55%),
-    radial-gradient(ellipse 50% 35% at 90% 10%, rgba(200, 245, 66, 0.08), transparent 50%),
-    #05070b;
+  background: #000000;
 }
 
 #app { position: relative; z-index: 1; min-height: 100vh; min-height: 100dvh; }
@@ -70,9 +67,9 @@ input[type="text"],
   margin: 0 0 0.75rem;
   padding: 0.35rem 0.75rem;
   border-radius: 999px;
-  border: 1px solid rgba(47, 95, 173, 0.55);
-  background: rgba(47, 95, 173, 0.18);
-  color: #9bb8ef;
+  border: 1px solid rgba(154, 167, 176, 0.45);
+  background: rgba(154, 167, 176, 0.14);
+  color: #c5d0d6;
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -82,18 +79,20 @@ input[type="text"],
 .brand {
   font-family: var(--font-display);
   font-size: clamp(3.2rem, 10vw, 5.5rem);
-  letter-spacing: 0.05em;
+  font-weight: 800;
+  letter-spacing: -0.03em;
   margin: 0;
   line-height: 0.9;
-  color: #dce7ff;
+  color: var(--text);
 }
 
 .brand-sm {
   font-family: var(--font-display);
-  font-size: 1.5rem;
-  letter-spacing: 0.06em;
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   margin: 0;
-  color: #9bb8ef;
+  color: var(--accent);
 }
 
 .title, .section-title {
@@ -237,6 +236,56 @@ input:focus { border-color: rgba(47, 95, 173, 0.7); }
   border: 1px solid var(--line);
   border-radius: 18px;
   padding: 1.25rem;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.deck-picker {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.deck-options {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.deck-option {
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+  display: grid;
+  gap: 0.2rem;
+  font: inherit;
+}
+
+.deck-option strong {
+  font-size: 1.05rem;
+}
+
+.deck-option span {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.deck-option.is-selected {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px rgba(90, 140, 255, 0.25);
+  background: rgba(90, 140, 255, 0.1);
+}
+
+.deck-badge {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.deck-badge strong {
+  color: var(--text);
 }
 
 .player-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }

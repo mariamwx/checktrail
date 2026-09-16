@@ -40,6 +40,7 @@ Required DOM ids / hooks. Renaming these breaks the game until `/public/logic` i
 ### Home / lobby
 - `home-form`, `player-name`, `room-code`, `btn-create`, `btn-join`, `home-error`
 - `lobby-code`, `btn-copy`, `player-list`, `lobby-status`, `btn-start`, `lobby-hint`
+- Host deck picker: `deck-picker`, `deck-philosophical`, `deck-dirty`, `deck-badge`
 - Invite: same pattern as Category 1 (`invite-join-block`, …)
 - Classes: `invite-receiver-mode`, `.actions`, `.join-row`
 

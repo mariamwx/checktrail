@@ -18,7 +18,7 @@
         <p class="category-badge">Category 2</p>
         <p class="brand">Mirror Vote</p>
         <h1 class="title">Who fits the question?</h1>
-        <p class="sub">Same questions, different order. Pick anonymously. See how the room sees each other — and you.</p>
+        <p class="sub">Same questions, different order. Host picks Dirty or Philosophical. Pick anonymously.</p>
 
         <form id="home-form" class="form">
           <label class="field">
@@ -56,6 +56,20 @@
         </div>
         <aside class="panel">
           <p class="aside-label" id="lobby-status">Waiting…</p>
+          <div id="deck-picker" class="deck-picker" hidden>
+            <p class="aside-label">Question deck</p>
+            <div class="deck-options" role="group" aria-label="Question deck">
+              <button type="button" class="deck-option" id="deck-philosophical" data-deck="philosophical">
+                <strong>Philosophical</strong>
+                <span>Ideas, politics, values</span>
+              </button>
+              <button type="button" class="deck-option" id="deck-dirty" data-deck="dirty">
+                <strong>Dirty</strong>
+                <span>Hookups, crushes, chaos</span>
+              </button>
+            </div>
+          </div>
+          <p class="deck-badge" id="deck-badge" hidden></p>
           <button type="button" class="btn btn-primary btn-lg" id="btn-start" hidden>Start voting</button>
           <p class="hint" id="lobby-hint">Need at least 2 players.</p>
         </aside>
