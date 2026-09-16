@@ -8,17 +8,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/ui/category1/styles.css" />
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://unpkg.com/three@0.169.0/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/"
-    }
-  }
-  </script>
 </head>
 <body>
-  <div id="scene-container" aria-hidden="true"></div>
   <div class="bg-noise" aria-hidden="true"></div>
   <div class="bg-glow" aria-hidden="true"></div>
 
@@ -137,26 +128,35 @@
       </header>
 
       <div class="finals-layout">
-        <div class="buzzer-row">
-          <button type="button" class="buzzer" id="buzzer-a" disabled>
+        <div class="finals-scoreboard">
+          <div class="finals-side finals-side-a">
             <span class="buzzer-name" id="finalist-a-name">—</span>
             <span class="buzzer-score" id="finalist-a-score">0</span>
-            <span class="buzzer-hit">BUZZ</span>
-          </button>
+          </div>
           <div class="vs-block">
             <p class="vs">VS</p>
             <p class="finals-timer" id="finals-timer">0:45</p>
           </div>
-          <button type="button" class="buzzer buzzer-b" id="buzzer-b" disabled>
+          <div class="finals-side finals-side-b">
             <span class="buzzer-name" id="finalist-b-name">—</span>
             <span class="buzzer-score" id="finalist-b-score">0</span>
-            <span class="buzzer-hit">BUZZ</span>
-          </button>
+          </div>
         </div>
 
         <div class="finals-question-card" id="finals-question-wrap">
           <p class="eyebrow" id="finals-phase-label">Get ready</p>
           <p class="finals-question" id="finals-question">Waiting for the host to start…</p>
+        </div>
+
+        <div class="giant-buzzer-wrap">
+          <button type="button" class="giant-buzzer" id="buzzer-main" disabled aria-label="Buzz in">
+            <span class="giant-buzzer-base" aria-hidden="true"></span>
+            <span class="giant-buzzer-dome">
+              <span class="giant-buzzer-shine" aria-hidden="true"></span>
+              <span class="giant-buzzer-label">BUZZ</span>
+            </span>
+          </button>
+          <p class="giant-buzzer-hint" id="buzzer-hint">Waiting…</p>
           <div class="finals-controls" id="finals-controls"></div>
         </div>
       </div>
@@ -192,7 +192,6 @@
     <div id="toast" class="toast" hidden></div>
   </div>
 
-  <script type="module" src="/ui/category1/scene-bridge.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="/logic/supabase-config.js"></script>
   <script src="/logic/category1.js"></script>

@@ -12,6 +12,7 @@
 
   const QUESTION_SECONDS = 3 * 60;
   const FINALS_SECONDS = 45;
+  const BUZZ_REVEAL_MS = 1200;
   const MAX_SKIPS = 3;
 
   const SUPABASE_URL = window.SUPABASE_CONFIG?.url || "";
@@ -65,8 +66,8 @@
     finalistBName: $("#finalist-b-name"),
     finalistAScore: $("#finalist-a-score"),
     finalistBScore: $("#finalist-b-score"),
-    buzzerA: $("#buzzer-a"),
-    buzzerB: $("#buzzer-b"),
+    buzzerMain: $("#buzzer-main"),
+    buzzerHint: $("#buzzer-hint"),
     finalsTimer: $("#finals-timer"),
     finalsQuestion: $("#finals-question"),
     finalsPhaseLabel: $("#finals-phase-label"),
@@ -324,6 +325,7 @@
       finals,
       winnerId,
       revealForId,
+      finalsAnswerScores,
       _finalistAId,
       _finalistBId,
     } = st;
@@ -344,6 +346,7 @@
       finals,
       winnerId,
       revealForId,
+      finalsAnswerScores: finalsAnswerScores || null,
       _finalistAId,
       _finalistBId,
     };
@@ -384,6 +387,7 @@
       finals: null,
       winnerId: null,
       revealForId: null,
+      finalsAnswerScores: null,
     };
   }
 
@@ -915,12 +919,19 @@
         q.used = true;
         if (player.skips >= MAX_SKIPS && canEliminatePlayer(player)) {
           player.kicked = true;
+          toast(`${player.name} is out (3 skips)`);
         }
         logQuestionOutcome({ question: q, player, pot: "wheel", outcome: "skipped" });
         state.currentPlayerId = null;
         state.currentQuestionId = null;
-        if (shouldGoToFinals()) startFinals();
-        else beginWheelRound();
+        if (shouldGoToFinals()) {
+          if (activePlayers().length <= 2) {
+            toast("Two players left — rapid fire!");
+          }
+          startFinals();
+        } else {
+          beginWheelRound();
+        }
         break;
       }
       case "chooseAnswer": {
@@ -949,31 +960,42 @@
         if (!state.finals || state.finals.phase !== "open") return;
         if (state.finals.buzzedBy) return;
         if (action.playerId !== state.finals.aId && action.playerId !== state.finals.bId) return;
+        const buzzer = getPlayer(action.playerId);
+        if (!buzzer || buzzer.kicked) return;
         state.finals.buzzedBy = action.playerId;
-        state.finals.phase = "locked";
+        // Shout the answer, then confirm
+        state.finals.phase = "confirm";
         publish();
         break;
       }
-      case "judgeBuzz": {
-        if (!state.finals || state.finals.phase !== "locked") return;
-        const correct = !!action.correct;
+      case "finalsConfirmAnswered": {
+        if (!state.finals || state.finals.phase !== "confirm") return;
+        if (action.playerId !== state.finals.buzzedBy) return;
         const id = state.finals.buzzedBy;
-        if (correct) {
-          if (id === state.finals.aId) state.finals.aScore += 1;
-          if (id === state.finals.bId) state.finals.bScore += 1;
-          const player = getPlayer(id);
-          const q = state.finals.questions?.[state.finals.index];
-          if (player && q) {
-            q.used = true;
-            logQuestionOutcome({ question: q, player, pot: "finals", outcome: "answered" });
-          }
+        if (id === state.finals.aId) state.finals.aScore += 1;
+        if (id === state.finals.bId) state.finals.bScore += 1;
+        const player = getPlayer(id);
+        const q = state.finals.questions?.[state.finals.index];
+        if (player && q) {
+          q.used = true;
+          if (typeof player.answered === "number") player.answered += 1;
+          logQuestionOutcome({ question: q, player, pot: "finals", outcome: "answered" });
         }
         advanceFinalsQuestion();
         break;
       }
+      case "openBuzzers": {
+        if (!state.finals || state.finals.phase !== "show") return;
+        state.finals.phase = "open";
+        publish();
+        break;
+      }
       case "startFinalsClock": {
-        if (!state.finals || state.finals.phase !== "ready") return;
-        openFinalsQuestion();
+        // Legacy: finals now open automatically; keep for older clients
+        if (!state.finals) return;
+        if (state.finals.phase === "ready" || state.finals.phase === "show") {
+          openFinalsQuestion();
+        }
         break;
       }
       default:
@@ -982,17 +1004,18 @@
   }
 
   function canEliminatePlayer(player) {
-    // Exactly 2 players at game start → never eliminate via skips
+    // 2-player games: no skip-outs (they go straight to rapid fire)
     if (state.startingPlayerCount === 2) return false;
-    // Never allow zero eligible wheel players
+    // With 3+: 3 skips = out, but always leave 2 for rapid fire
     const others = activePlayers().filter((p) => p.id !== player.id);
-    return others.length >= 1;
+    return others.length >= 2;
   }
 
   function shouldGoToFinals() {
-    // Deterministic: normal pool exhausted (not skips / eliminations)
+    // 2 still in (or a 2-player game) → rapid fire
+    if (activePlayers().length <= 2) return true;
+    // Or normal wheel questions are all used
     if (normalQuestions().length === 0) return true;
-    if (activePlayers().length === 0) return true;
     return false;
   }
 
@@ -1031,14 +1054,16 @@
     });
     state.rapidFireReserve = reserveCount;
 
-    beginWheelRound();
+    // 2 players (start or survivors) → rapid fire immediately; otherwise wheel
+    if (shouldGoToFinals()) startFinals();
+    else beginWheelRound();
   }
 
   function beginWheelRound() {
     const alive = wheelPlayers();
     const left = normalQuestions();
 
-    if (left.length === 0 || alive.length === 0) {
+    if (left.length === 0 || alive.length === 0 || shouldGoToFinals()) {
       startFinals();
       return;
     }
@@ -1103,6 +1128,18 @@
     return picked.slice(0, 2);
   }
 
+  /**
+   * Author reveal goes to whoever answered the most questions
+   * across the whole game (wheel + rapid fire). Ties broken randomly.
+   */
+  function pickAuthorRevealId(players = state?.players) {
+    const pool = players || [];
+    if (!pool.length) return null;
+    const top = Math.max(...pool.map((p) => p.answered ?? 0));
+    const tied = pool.filter((p) => (p.answered ?? 0) === top);
+    return pickRandomFrom(tied, 1)[0].id;
+  }
+
   function startFinals() {
     const all = state.players || [];
     if (all.length === 0) {
@@ -1113,44 +1150,32 @@
       return;
     }
 
-    // 2-player games: both are automatic finalists
-    let candidates;
-    if (state.startingPlayerCount === 2) {
-      candidates = all.filter((p) => !p.kicked);
-      if (candidates.length < 2) candidates = all.slice(0, 2);
-    } else {
-      candidates = activePlayers();
-      if (candidates.length < 2) {
-        const kicked = all
-          .filter((p) => p.kicked)
-          .sort((a, b) => getSelections(b) - getSelections(a));
-        candidates = [...candidates, ...kicked];
-      }
-    }
+    // Rapid fire is only for players still in the game — never bring back
+    // eliminated (3-skip) players, even if they have the most wheel picks.
+    const candidates = activePlayers();
 
     if (candidates.length === 0) {
+      state.revealForId = pickAuthorRevealId(all);
       state.phase = "end";
-      state.winnerId = null;
+      state.winnerId = state.revealForId;
       publish();
       return;
     }
 
     if (candidates.length === 1) {
+      // Sole survivor — no buzzer match
       state.phase = "end";
       state.winnerId = candidates[0].id;
-      state.revealForId = candidates[0].id;
+      state.revealForId = pickAuthorRevealId(all);
       publish();
       return;
     }
 
+    // 2+ still in: top 2 by selections among survivors only
+    // (author reveal is decided after rapid fire, once all answers are in)
     const finalists = pickFinalistsBySelections(candidates);
-    const a = finalists[0];
-    const b = finalists[1];
-    const topTier = Math.max(...candidates.map((p) => getSelections(p)));
-    const revealPool = candidates.filter((p) => getSelections(p) === topTier);
-    state.revealForId = pickRandomFrom(revealPool, 1)[0].id;
-    state._finalistAId = a.id;
-    state._finalistBId = b.id;
+    state._finalistAId = finalists[0].id;
+    state._finalistBId = finalists[1].id;
     beginFinalsMatch();
   }
 
@@ -1159,22 +1184,27 @@
     const bId = state._finalistBId;
     const a = getPlayer(aId);
     const b = getPlayer(bId);
-    if (!a || !b) {
+    if (!a || !b || a.kicked || b.kicked) {
+      state.revealForId = pickAuthorRevealId();
       state.phase = "end";
-      state.winnerId = state.revealForId || aId || bId || null;
+      state.winnerId =
+        (a && !a.kicked ? aId : null) ||
+        (b && !b.kicked ? bId : null) ||
+        state.revealForId;
       publish();
       return;
     }
 
     const bank = rapidFireQuestions();
     if (bank.length === 0) {
-      state.winnerId = state.revealForId || a.id;
+      state.revealForId = pickAuthorRevealId();
+      state.winnerId = a.id;
       state.phase = "end";
       state.currentPlayerId = null;
       state.currentQuestionId = null;
       state.finals = null;
       publish();
-      toast("No rapid-fire questions reserved — crowning top selectee");
+      toast("No rapid-fire questions reserved — ending on wheel results");
       return;
     }
 
@@ -1191,8 +1221,9 @@
       index: 0,
       questions: finalsQs,
       buzzedBy: null,
-      phase: "ready",
-      endsAt: null,
+      phase: "show",
+      buzzOpensAt: Date.now() + BUZZ_REVEAL_MS,
+      endsAt: Date.now() + FINALS_SECONDS * 1000,
     };
     publish();
   }
@@ -1204,8 +1235,12 @@
       return;
     }
     state.finals.buzzedBy = null;
-    state.finals.phase = "open";
-    state.finals.endsAt = Date.now() + FINALS_SECONDS * 1000;
+    // Show question first; buzzer arms after a short beat
+    state.finals.phase = "show";
+    state.finals.buzzOpensAt = Date.now() + BUZZ_REVEAL_MS;
+    if (!state.finals.endsAt) {
+      state.finals.endsAt = Date.now() + FINALS_SECONDS * 1000;
+    }
     publish();
   }
 
@@ -1220,19 +1255,29 @@
       finishFinals();
       return;
     }
-    state.finals.phase = "open";
+    state.finals.phase = "show";
+    state.finals.buzzOpensAt = Date.now() + BUZZ_REVEAL_MS;
     publish();
   }
 
   function finishFinals() {
     const f = state.finals;
-    let winnerId = state.revealForId;
+    // Game winner = who buzzed in and answered the most in rapid fire
+    let winnerId = null;
     if (f) {
       if (f.aScore > f.bScore) winnerId = f.aId;
       else if (f.bScore > f.aScore) winnerId = f.bId;
-      else winnerId = state.revealForId; // tie → most answered keeps crown
+      else {
+        // Exact tie on rapid-fire answers → coin flip between finalists
+        winnerId = Math.random() < 0.5 ? f.aId : f.bId;
+      }
     }
     state.winnerId = winnerId;
+    state.finalsAnswerScores = f
+      ? { [f.aId]: f.aScore, [f.bId]: f.bScore }
+      : null;
+    // Author reveal = most answers across the whole game (wheel + rapid fire)
+    state.revealForId = pickAuthorRevealId();
     state.phase = "end";
     publish();
   }
@@ -1622,71 +1667,108 @@
 
     const amA = me.id === f.aId;
     const amB = me.id === f.bId;
-    const canBuzz = f.phase === "open" && (amA || amB);
-
-    els.buzzerA.disabled = !(canBuzz && amA);
-    els.buzzerB.disabled = !(canBuzz && amB);
-    els.buzzerA.classList.toggle("lit", f.buzzedBy === f.aId);
-    els.buzzerB.classList.toggle("lit", f.buzzedBy === f.bId);
-
+    const self = getPlayer(me.id);
+    const amFinalist = (amA || amB) && self && !self.kicked;
+    const canBuzz = f.phase === "open" && amFinalist;
+    const someoneBuzzed = !!f.buzzedBy;
     const q = f.questions[f.index];
+
+    if (els.buzzerMain) {
+      els.buzzerMain.disabled = !canBuzz;
+      els.buzzerMain.classList.toggle("lit", someoneBuzzed);
+      els.buzzerMain.classList.toggle("is-pressed", someoneBuzzed);
+    }
+
     els.finalsControls.innerHTML = "";
 
+    if (self?.kicked) {
+      els.finalsPhaseLabel.textContent = "You’re out";
+      els.finalsQuestion.textContent = `${a?.name || "—"} vs ${b?.name || "—"} in rapid fire. Spectate only — you can’t buzz.`;
+      if (els.buzzerHint) els.buzzerHint.textContent = "You’re out — spectate only";
+      return;
+    }
+
+    // Legacy ready → kick into show/open
     if (f.phase === "ready") {
+      if (me.isHost) send({ type: "startFinalsClock" });
       els.finalsPhaseLabel.textContent = "Rapid Fire";
-      els.finalsQuestion.textContent = `${a?.name} vs ${b?.name} — rapid-fire buzzers. First to buzz answers out loud.`;
+      els.finalsQuestion.textContent = "Starting…";
       els.finalsTimer.textContent = formatTime(FINALS_SECONDS);
-      if (me.isHost) {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "btn btn-primary";
-        btn.textContent = "Start rapid-fire";
-        btn.onclick = () => send({ type: "startFinalsClock" });
-        els.finalsControls.appendChild(btn);
-      } else {
-        els.finalsControls.innerHTML = `<p class="waiting-note">Waiting for host…</p>`;
-      }
+      if (els.buzzerHint) els.buzzerHint.textContent = "Starting…";
       return;
     }
 
-    if (!q) {
+    if (!q && f.phase !== "show") {
       els.finalsQuestion.textContent = "Wrapping up…";
+      if (els.buzzerHint) els.buzzerHint.textContent = "";
       return;
     }
 
-    els.finalsPhaseLabel.textContent =
-      f.phase === "open" ? "Buzz in!" : f.buzzedBy ? `${getPlayer(f.buzzedBy)?.name} buzzed` : "Locked";
-    els.finalsQuestion.textContent = q.text;
+    if (q) {
+      els.finalsQuestion.textContent = q.text;
+    }
 
     const updateTimer = () => {
-      if (!state?.finals?.endsAt) return;
-      const left = (state.finals.endsAt - Date.now()) / 1000;
-      els.finalsTimer.textContent = formatTime(left);
-      if (left <= 0 && me.isHost && state.finals.phase !== "ready") {
-        clearInterval(finalsTick);
-        finishFinals();
+      if (!state?.finals) return;
+      const cur = state.finals;
+      if (cur.endsAt) {
+        const left = (cur.endsAt - Date.now()) / 1000;
+        els.finalsTimer.textContent = formatTime(left);
+        if (left <= 0 && me.isHost && cur.phase !== "ready") {
+          clearInterval(finalsTick);
+          finishFinals();
+          return;
+        }
+      }
+      // Question is visible; arm buzzers after the reveal beat
+      if (
+        cur.phase === "show" &&
+        me.isHost &&
+        Date.now() >= (cur.buzzOpensAt || 0)
+      ) {
+        send({ type: "openBuzzers" });
       }
     };
     updateTimer();
-    finalsTick = setInterval(updateTimer, 250);
+    clearInterval(finalsTick);
+    finalsTick = setInterval(updateTimer, 200);
 
-    if (f.phase === "locked" && me.isHost) {
-      const row = document.createElement("div");
-      row.className = "choice-row";
-      row.innerHTML = `
-        <button type="button" class="btn btn-ok" id="btn-correct">Correct</button>
-        <button type="button" class="btn btn-danger" id="btn-wrong">Wrong</button>
-      `;
-      els.finalsControls.appendChild(row);
-      $("#btn-correct", row).onclick = () => send({ type: "judgeBuzz", correct: true });
-      $("#btn-wrong", row).onclick = () => send({ type: "judgeBuzz", correct: false });
-    } else if (f.phase === "locked") {
-      els.finalsControls.innerHTML = `<p class="waiting-note">Host is judging the answer…</p>`;
-    } else if (f.phase === "open") {
-      if (amA || amB) {
-        els.finalsControls.innerHTML = `<p class="waiting-note">Smash your buzzer if you know it!</p>`;
-      } else {
-        els.finalsControls.innerHTML = `<p class="waiting-note">Spectating the showdown…</p>`;
+    const amBuzzed = me.id === f.buzzedBy;
+    const buzzedName = getPlayer(f.buzzedBy)?.name || "Player";
+
+    if (f.phase === "show") {
+      els.finalsPhaseLabel.textContent = "Read it…";
+      if (els.buzzerHint) {
+        els.buzzerHint.textContent = amFinalist
+          ? "Buzzer arms in a moment…"
+          : "Spectating…";
+      }
+      return;
+    }
+
+    if (f.phase === "open") {
+      els.finalsPhaseLabel.textContent = "Buzz in!";
+      if (els.buzzerHint) {
+        els.buzzerHint.textContent = amFinalist ? "Smash it!" : "Spectating";
+      }
+      return;
+    }
+
+    if (f.phase === "confirm") {
+      els.finalsPhaseLabel.textContent = `${buzzedName} buzzed`;
+      if (els.buzzerHint) {
+        els.buzzerHint.textContent = amBuzzed
+          ? "Say your answer out loud"
+          : `${buzzedName} is answering…`;
+      }
+      if (amBuzzed) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "btn btn-ok btn-lg";
+        btn.id = "btn-confirm-answered";
+        btn.textContent = "Have you said the answer? — Yes";
+        btn.onclick = () => send({ type: "finalsConfirmAnswered", playerId: me.id });
+        els.finalsControls.appendChild(btn);
       }
     }
   }
@@ -1694,22 +1776,34 @@
   function renderEnd() {
     const winner = getPlayer(state.winnerId);
     const revealFor = getPlayer(state.revealForId);
+    const scores = state.finalsAnswerScores;
+    const winScore =
+      scores && state.winnerId != null ? scores[state.winnerId] : null;
+
     els.endTitle.textContent = winner ? `${winner.name} takes it` : "That’s a wrap";
-    els.endSub.textContent = revealFor
-      ? `${revealFor.name} earned the author reveal (most wheel picks in the main round).`
-      : "Thanks for playing.";
+    if (winner && winScore != null) {
+      els.endSub.textContent = `${winner.name} won rapid fire with ${winScore} answer${winScore === 1 ? "" : "s"} (buzz in, shout it out).`;
+    } else if (winner) {
+      els.endSub.textContent = `${winner.name} wins.`;
+    } else {
+      els.endSub.textContent = "Thanks for playing.";
+    }
+    if (revealFor) {
+      const n = revealFor.answered ?? 0;
+      els.endSub.textContent += ` ${revealFor.name} earned the author reveal (${n} answer${n === 1 ? "" : "s"} total, including rapid fire).`;
+    }
 
     const ranked = [...state.players].sort(
-      (a, b) => getSelections(b) - getSelections(a) || b.answered - a.answered
+      (a, b) => (b.answered ?? 0) - (a.answered ?? 0) || getSelections(b) - getSelections(a)
     );
     els.standings.innerHTML = "";
     ranked.forEach((p, i) => {
       const li = document.createElement("li");
-      li.innerHTML = `<span>#${i + 1} ${escapeHtml(p.name)}${p.kicked ? " (out)" : ""}</span><span>${getSelections(p)} picks · ${p.answered} answered · ${p.skips} skips</span>`;
+      li.innerHTML = `<span>#${i + 1} ${escapeHtml(p.name)}${p.kicked ? " (out)" : ""}</span><span>${p.answered ?? 0} answered · ${getSelections(p)} picks · ${p.skips} skips</span>`;
       els.standings.appendChild(li);
     });
 
-    const canReveal = me.id === state.revealForId || me.id === state.winnerId;
+    const canReveal = me.id === state.revealForId;
     if (canReveal && (state.questions?.length || 0) > 0) {
       els.revealPanel.hidden = false;
       els.revealList.innerHTML = "";
@@ -1728,7 +1822,7 @@
     } else {
       els.revealPanel.hidden = true;
       if (!canReveal) {
-        els.endSub.textContent += " Only the top selectee can see who wrote each question.";
+        els.endSub.textContent += " Only whoever answered the most can see who wrote each question.";
       }
     }
   }
@@ -2067,19 +2161,36 @@
     if (state?.phase === "questions") renderQuestions();
   });
 
-  els.buzzerA.addEventListener("click", () => {
-    if (state?.finals?.aId === me.id) send({ type: "buzz", playerId: me.id });
+  els.buzzerMain?.addEventListener("pointerdown", (e) => {
+    if (els.buzzerMain.disabled) return;
+    els.buzzerMain.classList.add("is-pressed");
+    const self = getPlayer(me.id);
+    if (self?.kicked) return;
+    if (!state?.finals || state.finals.phase !== "open") return;
+    if (state.finals.aId !== me.id && state.finals.bId !== me.id) return;
+    e.preventDefault();
+    send({ type: "buzz", playerId: me.id });
   });
-  els.buzzerB.addEventListener("click", () => {
-    if (state?.finals?.bId === me.id) send({ type: "buzz", playerId: me.id });
+  els.buzzerMain?.addEventListener("pointerup", () => {
+    if (!state?.finals?.buzzedBy) els.buzzerMain?.classList.remove("is-pressed");
+  });
+  els.buzzerMain?.addEventListener("pointerleave", () => {
+    if (!state?.finals?.buzzedBy) els.buzzerMain?.classList.remove("is-pressed");
+  });
+  els.buzzerMain?.addEventListener("click", (e) => {
+    // pointerdown already sent buzz; block duplicate click
+    e.preventDefault();
   });
 
   window.addEventListener("keydown", (e) => {
     if (!state || state.phase !== "finals" || state.finals?.phase !== "open") return;
     if (e.repeat) return;
+    const self = getPlayer(me.id);
+    if (self?.kicked) return;
     if (e.code === "Space" || e.key === "a" || e.key === "A" || e.key === "l" || e.key === "L") {
       e.preventDefault();
       if (state.finals.aId === me.id || state.finals.bId === me.id) {
+        els.buzzerMain?.classList.add("is-pressed", "lit");
         send({ type: "buzz", playerId: me.id });
       }
     }
