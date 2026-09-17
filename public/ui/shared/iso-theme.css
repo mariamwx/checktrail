@@ -363,6 +363,55 @@
   :root {
     --iso-cell: 52px;
   }
+
+  .iso-stage {
+    padding:
+      max(0.85rem, env(safe-area-inset-top))
+      max(0.75rem, env(safe-area-inset-right))
+      max(1.25rem, env(safe-area-inset-bottom))
+      max(0.75rem, env(safe-area-inset-left));
+  }
+
+  .iso-frame {
+    width: 100%;
+    max-width: 100%;
+    padding: 1.25rem 1rem 1.5rem;
+    box-sizing: border-box;
+  }
+
+  .iso-brand {
+    font-size: clamp(2.15rem, 10.5vw, 2.85rem);
+    line-height: 0.95;
+  }
+
+  .iso-title {
+    font-size: clamp(1.05rem, 4.5vw, 1.35rem);
+  }
+
+  .iso-sub {
+    font-size: 0.9rem;
+    margin-bottom: 1.25rem;
+    max-width: none;
+  }
+
+  .iso-btn,
+  .iso-btn-lg {
+    width: 100%;
+    min-height: 48px;
+  }
+
+  /* Fewer floating guys so the card stays readable */
+  .guy-p2,
+  .guy-p6,
+  .guy-p8,
+  .guy-p11 {
+    display: none;
+  }
+
+  .guy {
+    transform: rotate(var(--r, 0deg)) scale(0.78);
+    opacity: 0.85;
+  }
 }
 
 /* Editorial frame — flat, sharp, thin charcoal border */
