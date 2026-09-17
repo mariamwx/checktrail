@@ -2,8 +2,8 @@
    UI (placeholder): /public/ui/category2/  — replace markup/CSS/assets there.
    This file is logic only; keep element ids listed in /public/ui/CONTRACT.md.
    Schema: category_two
-   Everyone sees the same question at the same time (shared deck order).
-   Advance to the next question only after every player has voted.
+   Everyone gets the same questions in the same order.
+   Each player answers at their own pace (no waiting per question).
    Votes are anonymous. Results = bar charts + personal trait body.
 */
 
@@ -179,23 +179,6 @@
     );
   }
 
-  function currentRoundFromVotes(votes) {
-    const order = sharedQuestionOrder();
-    const playerIds = players.map((p) => p.id);
-    for (let i = 0; i < order.length; i++) {
-      const qid = order[i];
-      const voters = new Set(
-        (votes || [])
-          .filter((v) => v.question_id === qid)
-          .map((v) => v.voter_id)
-      );
-      if (!playerIds.every((id) => voters.has(id))) {
-        return { qid, index: i, voters, done: false };
-      }
-    }
-    return { qid: null, index: order.length, voters: new Set(), done: true };
-  }
-
   async function fetchRoomVotes() {
     const { data, error } = await db()
       .from("votes")
@@ -205,7 +188,19 @@
     return data || [];
   }
 
-  async function syncSharedRound() {
+  function finishedPlayerCount(votes) {
+    const order = sharedQuestionOrder();
+    if (!order.length) return 0;
+    const byVoter = {};
+    (votes || []).forEach((v) => {
+      if (!order.includes(v.question_id)) return;
+      byVoter[v.voter_id] = (byVoter[v.voter_id] || 0) + 1;
+    });
+    return players.filter((p) => (byVoter[p.id] || 0) >= order.length).length;
+  }
+
+  /** Same deck order for everyone; each player advances at their own pace. */
+  async function syncProgress() {
     if (!roomCode || !questions.length || !players.length) return;
     const votes = await fetchRoomVotes();
     myVotes = {};
@@ -214,12 +209,13 @@
     });
 
     myOrder = sharedQuestionOrder();
-    const round = currentRoundFromVotes(votes);
+    const totalNeeded = players.length * myOrder.length;
+    const everyoneDone = finishedPlayerCount(votes) >= players.length;
 
-    if (round.done) {
+    if (everyoneDone) {
       stopWaitPoll();
       els.waitCopy.textContent = "Everyone finished — opening results…";
-      els.waitStat.textContent = `${votes.length} / ${players.length * questions.length} votes in`;
+      els.waitStat.textContent = `${votes.length} / ${totalNeeded} votes in`;
       if (me.isHost) {
         await db()
           .from("rooms")
@@ -231,18 +227,26 @@
       return;
     }
 
-    myIndex = round.index;
-    const votedCount = players.filter((p) => round.voters.has(p.id)).length;
-    const waitingOn = players.filter((p) => !round.voters.has(p.id));
+    // Personal cursor: first unanswered question in the shared order
+    myIndex = 0;
+    while (myIndex < myOrder.length && myVotes[myOrder[myIndex]] != null) {
+      myIndex += 1;
+    }
 
-    if (round.voters.has(me.id) || myVotes[round.qid]) {
+    if (myIndex >= myOrder.length) {
       phase = "wait";
       const title = document.querySelector("#screen-wait .section-title");
-      if (title) title.textContent = "Vote in";
+      if (title) title.textContent = "You’re done";
+      const waitingOn = players.filter((p) => {
+        const n = votes.filter(
+          (v) => v.voter_id === p.id && myOrder.includes(v.question_id)
+        ).length;
+        return n < myOrder.length;
+      });
       els.waitCopy.textContent = waitingOn.length
-        ? `Waiting for ${waitingOn.map((p) => p.name).join(", ")} on this question…`
-        : "Moving to the next question…";
-      els.waitStat.textContent = `${votedCount} / ${players.length} voted · Q${round.index + 1} of ${questions.length}`;
+        ? `Waiting for ${waitingOn.map((p) => p.name).join(", ")} to finish…`
+        : "Almost there…";
+      els.waitStat.textContent = `${finishedPlayerCount(votes)} / ${players.length} finished`;
       show("wait");
       startWaitPoll();
       return;
@@ -290,7 +294,7 @@
     myOrder = sharedQuestionOrder();
     renderLobby();
     if (!opts.silent && (phase === "playing" || phase === "wait")) {
-      await syncSharedRound().catch(console.error);
+      await syncProgress().catch(console.error);
     }
   }
 
@@ -318,7 +322,7 @@
       await beginPlaying();
     } else if (data.phase === "playing" && (phase === "playing" || phase === "wait")) {
       if (nextDeck !== roomDeckVersion) await loadQuestionBank(nextDeck);
-      await syncSharedRound().catch(console.error);
+      await syncProgress().catch(console.error);
     } else if (data.phase === "results") {
       if (nextDeck !== roomDeckVersion) await loadQuestionBank(nextDeck);
       phase = "results";
@@ -343,7 +347,7 @@
       .on(
         "postgres_changes",
         { event: "*", schema: "category_two", table: "votes", filter: `room_id=eq.${roomCode}` },
-        () => syncSharedRound().catch(console.error)
+        () => syncProgress().catch(console.error)
       )
       .subscribe();
   }
@@ -360,7 +364,7 @@
     els.lobbyStatus.textContent = `${players.length} player${players.length === 1 ? "" : "s"} · ${deckLabel()} deck`;
     els.lobbyHint.textContent = ready
       ? me.isHost
-        ? "Pick a deck, then start — everyone answers the same question together."
+        ? "Pick a deck, then start — same questions for everyone, answer at your own pace."
         : "Waiting for the host to start."
       : "Need at least 2 players.";
 
@@ -552,7 +556,7 @@
   async function beginPlaying() {
     stopWaitPoll();
     myOrder = sharedQuestionOrder();
-    await syncSharedRound();
+    await syncProgress();
   }
 
   function questionById(id) {
@@ -563,7 +567,7 @@
     const qid = myOrder[myIndex] || sharedQuestionOrder()[myIndex];
     const q = questionById(qid);
     if (!q) {
-      syncSharedRound().catch(console.error);
+      syncProgress().catch(console.error);
       return;
     }
     els.progressChip.textContent = `${myIndex + 1} / ${questions.length}`;
@@ -612,7 +616,7 @@
 
     myVotes[questionId] = nomineeId;
     saveSession();
-    await syncSharedRound();
+    await syncProgress();
   }
 
   function stopWaitPoll() {
@@ -625,7 +629,7 @@
   function startWaitPoll() {
     stopWaitPoll();
     waitPollTimer = setInterval(() => {
-      syncSharedRound().catch(console.error);
+      syncProgress().catch(console.error);
     }, 1500);
   }
 
