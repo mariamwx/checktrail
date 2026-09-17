@@ -58,6 +58,9 @@
     questionCount: $("#question-count"),
     finalsQuestionCount: $("#finals-question-count"),
     myQuestions: $("#my-questions"),
+    ideasPanel: $("#ideas-panel"),
+    ideasWheel: $("#ideas-wheel"),
+    ideasReel: $("#ideas-reel"),
     scoreStrip: $("#score-strip"),
     wheelCanvas: $("#wheel-canvas"),
     wheelCaption: $("#wheel-caption"),
@@ -82,9 +85,16 @@
     toast: $("#toast"),
   };
 
+  // Editorial palette — matches iso-theme guy accents
   const WHEEL_COLORS = [
-    "#c8f542", "#3ec6ff", "#ffb020", "#ff5a4a",
-    "#7c5cff", "#3dff9a", "#ff7ad9", "#ffe566",
+    "#b83a3a",
+    "#2f4f9b",
+    "#4a7a45",
+    "#2a7d7a",
+    "#c4a35a",
+    "#a85a6e",
+    "#c46a3a",
+    "#5a5a8a",
   ];
 
   /** @type {GameState} */
@@ -97,8 +107,69 @@
   let wheelSpinning = false;
   let lastSpinToken = -1;
   let wheelRaf = 0;
+  let revealCurtainPlayed = false;
   let myLocalQuestions = [];
   let toastTimer = null;
+
+  /** Circular idea reel for the question pool screen */
+  const IDEA_BANK = [
+    // Salacious
+    { text: "Who here would you most want seven minutes alone with?", vibe: "salacious" },
+    { text: "What’s the filthiest compliment you’ve ever wanted to give someone in this room?", vibe: "salacious" },
+    { text: "Who has the most dangerous flirting energy here?", vibe: "salacious" },
+    { text: "Confess a crush you’ve taken to the grave.", vibe: "salacious" },
+    { text: "Who would you steal for one shameless night with zero consequences?", vibe: "salacious" },
+    { text: "What’s your hottest unpopular opinion about dating?", vibe: "salacious" },
+    { text: "Who here would ruin your self-control the fastest?", vibe: "salacious" },
+    { text: "Describe your ideal reckless night without naming names.", vibe: "salacious" },
+    { text: "Who would you most want to make jealous?", vibe: "salacious" },
+    { text: "What’s the most scandalous thing you’ve done that nobody here knows?", vibe: "salacious" },
+    { text: "Who looks like trouble in the best way?", vibe: "salacious" },
+    { text: "What’s a fantasy you’ve never said out loud?", vibe: "salacious" },
+    { text: "Who would survive longest in a temptation challenge?", vibe: "salacious" },
+    { text: "Rate everyone’s kissing potential — then explain the ranking.", vibe: "salacious" },
+    { text: "Who would you text at 1am if you were feeling bold?", vibe: "salacious" },
+    { text: "What’s the sexiest quality someone in this room has?", vibe: "salacious" },
+    { text: "Who would you want to slow-dance with in a near-empty bar?", vibe: "salacious" },
+    { text: "What’s a soft launch you’d never soft-launch?", vibe: "salacious" },
+    { text: "Who here do you clock as a secret menace?", vibe: "salacious" },
+    { text: "If tonight ended badly in the best way, who started it?", vibe: "salacious" },
+    // Philosophical
+    { text: "If you could erase one memory, would you?", vibe: "philosophical" },
+    { text: "What belief did you abandon that still haunts you?", vibe: "philosophical" },
+    { text: "Is loyalty a virtue or a cage?", vibe: "philosophical" },
+    { text: "What are you most afraid people are right about?", vibe: "philosophical" },
+    { text: "If your life were a question, what would it be asking?", vibe: "philosophical" },
+    { text: "Do you believe in soulmates, or just good timing?", vibe: "philosophical" },
+    { text: "What truth do you keep postponing?", vibe: "philosophical" },
+    { text: "Would you rather be loved or understood?", vibe: "philosophical" },
+    { text: "What’s a kindness you still regret not giving?", vibe: "philosophical" },
+    { text: "If nobody would remember this conversation, what would you admit?", vibe: "philosophical" },
+    { text: "What does ‘home’ mean when it isn’t a place?", vibe: "philosophical" },
+    { text: "Are you becoming who you hoped, or who was convenient?", vibe: "philosophical" },
+    { text: "What would your younger self refuse to forgive you for?", vibe: "philosophical" },
+    { text: "Is silence ever the braver answer?", vibe: "philosophical" },
+    { text: "What are you performing for people who aren’t watching?", vibe: "philosophical" },
+    { text: "If happiness had a cost, what have you already paid?", vibe: "philosophical" },
+    { text: "Which version of yourself are you most dishonest about?", vibe: "philosophical" },
+    { text: "What would you do if shame stopped working on you?", vibe: "philosophical" },
+    { text: "Is forgiveness for them, or for the story you need to exit?", vibe: "philosophical" },
+    { text: "What question are you tired of answering about yourself?", vibe: "philosophical" },
+  ];
+
+  const IDEA_REEL_SIZE = 14;
+  const IDEA_VISIBLE = 5; // center ±2
+  const IDEA_ITEM_H = 44;
+  let ideaReel = [];
+  let ideaReserve = [];
+  let ideaOffset = 0; // continuous scroll offset in item units
+  let ideasWired = false;
+  let ideasDrag = null;
+  /** Idea filled into the box but not submitted yet — returns to the reel if abandoned */
+  let pendingIdea = null;
+  let pendingReplacementId = null;
+  /** null = all · "salacious" | "philosophical" */
+  let ideaFilter = null;
 
   const SPIN_MS = 5200;
 
@@ -146,18 +217,20 @@
     return `c1-session-${String(code || "").toUpperCase()}`;
   }
 
+  const ACTIVE_ROOM_KEY = "c1-active-room";
+
   function saveSession() {
     if (!me?.id || !state?.roomCode) return;
     try {
-      localStorage.setItem(
-        sessionKey(state.roomCode),
-        JSON.stringify({
-          id: me.id,
-          name: me.name,
-          isHost: me.isHost,
-          roomCode: state.roomCode,
-        })
-      );
+      const payload = {
+        id: me.id,
+        name: me.name,
+        isHost: me.isHost,
+        roomCode: state.roomCode,
+        savedAt: Date.now(),
+      };
+      localStorage.setItem(sessionKey(state.roomCode), JSON.stringify(payload));
+      localStorage.setItem(ACTIVE_ROOM_KEY, String(state.roomCode).toUpperCase());
     } catch (_) {}
   }
 
@@ -170,10 +243,51 @@
     }
   }
 
+  function loadActiveRoomCode() {
+    try {
+      return localStorage.getItem(ACTIVE_ROOM_KEY) || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   function clearSession(code) {
     try {
       localStorage.removeItem(sessionKey(code));
+      const active = localStorage.getItem(ACTIVE_ROOM_KEY);
+      if (active && String(active).toUpperCase() === String(code || "").toUpperCase()) {
+        localStorage.removeItem(ACTIVE_ROOM_KEY);
+      }
     } catch (_) {}
+  }
+
+  function restoreMyLocalQuestionsFromState() {
+    if (!me?.id || !state?.questions) {
+      myLocalQuestions = [];
+      return;
+    }
+    myLocalQuestions = state.questions
+      .filter((q) => q.authorId === me.id)
+      .map((q) => ({ text: q.text }));
+  }
+
+  /** Host timers die on refresh — re-arm anything that was mid-flight */
+  function recoverHostProgress() {
+    if (!me.isHost || !state) return;
+
+    if (state.phase === "spinning" && state.currentPlayerId) {
+      const token = state.spinToken;
+      const playerId = state.currentPlayerId;
+      // Give the wheel a moment to animate for everyone, then open answering
+      setTimeout(() => {
+        if (!state || !me.isHost) return;
+        if (state.phase !== "spinning") return;
+        if (state.spinToken !== token) return;
+        if (state.currentPlayerId !== playerId) return;
+        state.phase = "answering";
+        publish();
+      }, Math.min(SPIN_MS, 1600) + 200);
+    }
   }
 
   // ---------- utils ----------
@@ -605,10 +719,30 @@
         });
       });
 
-      // Host: seed local state after channel is up
+      // Host: seed fresh lobby only for brand-new rooms.
+      // On resume, re-load the persisted room snapshot — never createState()
+      // or a refresh will dump everyone back to questions/lobby.
       if (this.isHost && hostPlayer) {
         const players = await this.fetchPlayers();
-        this.onState?.(createState(this.code, hostPlayer));
+        if (resume) {
+          const room = await this.fetchRoom();
+          if (room) {
+            const game = room.game && typeof room.game === "object" ? room.game : {};
+            this.onState?.(
+              mergeGameIntoState(
+                {
+                  ...game,
+                  roomCode: this.code,
+                  hostId: room.host_id || hostPlayer.id,
+                  phase: room.phase || game.phase || "lobby",
+                },
+                players
+              )
+            );
+          }
+        } else {
+          this.onState?.(createState(this.code, hostPlayer));
+        }
         this.onPlayers?.(players);
       } else if (joinPlayer) {
         const players = await this.fetchPlayers();
@@ -734,13 +868,14 @@
     }
 
     async start() {
+      // Host and guests both reload the latest snapshot after a refresh
+      const raw = localStorage.getItem(this.storageKey);
+      if (raw) {
+        try {
+          this.onState?.(JSON.parse(raw));
+        } catch (_) {}
+      }
       if (!this.isHost) {
-        const raw = localStorage.getItem(this.storageKey);
-        if (raw) {
-          try {
-            this.onState?.(JSON.parse(raw));
-          } catch (_) {}
-        }
         this.channel.postMessage({ type: "hello", sourceId: me.id });
       }
     }
@@ -877,6 +1012,8 @@
       }
       case "startQuestions": {
         if (state.phase !== "lobby") return;
+        // Only the room host may open the question pool
+        if (action.playerId !== state.hostId) return;
         if (activePlayers().length < 2) return;
         state.phase = "questions";
         state.questionsLocked = false;
@@ -905,6 +1042,8 @@
       }
       case "questionsDone": {
         if (state.phase !== "questions") return;
+        // Only the room host may start the wheel phase
+        if (action.playerId !== state.hostId) return;
         lockPoolAndStartNormal();
         break;
       }
@@ -1059,6 +1198,17 @@
     else beginWheelRound();
   }
 
+  /**
+   * Prefer other people's questions. Only serve a player's own question
+   * when nothing else remains in the normal (non–rapid-fire) pool.
+   */
+  function pickQuestionForPlayer(player, available) {
+    if (!available.length) return null;
+    const fromOthers = available.filter((q) => q.authorId !== player.id);
+    const pool = fromOthers.length ? fromOthers : available;
+    return pool[0];
+  }
+
   function beginWheelRound() {
     const alive = wheelPlayers();
     const left = normalQuestions();
@@ -1072,8 +1222,11 @@
     const player = alive[(Math.random() * alive.length) | 0];
     setSelections(player, getSelections(player) + 1);
 
-    // Next question in shuffled normal order
-    const q = left[0];
+    const q = pickQuestionForPlayer(player, left);
+    if (!q) {
+      startFinals();
+      return;
+    }
 
     const targetIndex = Math.max(
       0,
@@ -1300,10 +1453,14 @@
 
     ctx.clearRect(0, 0, size, size);
 
-    // outer ring
+    // outer ring — ink outline, cream field
     ctx.beginPath();
-    ctx.arc(cx, cy, radius + 4, 0, Math.PI * 2);
-    ctx.fillStyle = "#0a1520";
+    ctx.arc(cx, cy, radius + 5, 0, Math.PI * 2);
+    ctx.fillStyle = "#2a2826";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius + 1, 0, Math.PI * 2);
+    ctx.fillStyle = "#f7f5f1";
     ctx.fill();
 
     for (let i = 0; i < n; i++) {
@@ -1312,9 +1469,7 @@
       ctx.moveTo(cx, cy);
       ctx.arc(cx, cy, radius, start, start + arc, false);
       ctx.closePath();
-      let fill = WHEEL_COLORS[i % WHEEL_COLORS.length];
-      if (highlightIndex === i) fill = "#ffffff";
-      ctx.fillStyle = fill;
+      ctx.fillStyle = WHEEL_COLORS[i % WHEEL_COLORS.length];
       ctx.fill();
 
       // divider
@@ -1324,31 +1479,70 @@
         cx + Math.cos(start) * radius,
         cy + Math.sin(start) * radius
       );
-      ctx.strokeStyle = "rgba(7, 16, 24, 0.35)";
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(42, 40, 38, 0.45)";
+      ctx.lineWidth = 2.5;
       ctx.stroke();
 
-      // label
+      // label — light ink on saturated segments
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(start + arc / 2);
       ctx.textAlign = "right";
-      ctx.fillStyle = "#071018";
-      ctx.font = `bold ${Math.max(13, 26 - n * 0.8)}px Outfit, sans-serif`;
+      ctx.fillStyle = "#f7f5f1";
+      ctx.strokeStyle = "rgba(28, 27, 25, 0.35)";
+      ctx.lineWidth = 3;
+      ctx.font = `700 ${Math.max(13, 26 - n * 0.8)}px Syne, DM Sans, system-ui, sans-serif`;
       const label = (players[i]?.name || "?").slice(0, 10);
+      ctx.strokeText(label, radius - 18, 5);
       ctx.fillText(label, radius - 18, 5);
       ctx.restore();
+    }
+
+    // Near-select outline drawn last so it sits on top — thick & prominent
+    if (highlightIndex >= 0 && highlightIndex < n) {
+      const start = angleRad + highlightIndex * arc;
+      const pad = 0.012;
+
+      // Outer ink wedge outline
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, radius + 2, start, start + arc, false);
+      ctx.closePath();
+      ctx.strokeStyle = "#1c1b19";
+      ctx.lineWidth = 8;
+      ctx.lineJoin = "round";
+      ctx.stroke();
+
+      // Cream inner rim along the rim arc
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius - 5, start + pad, start + arc - pad, false);
+      ctx.strokeStyle = "#f7f5f1";
+      ctx.lineWidth = 5;
+      ctx.lineCap = "butt";
+      ctx.stroke();
+
+      // Second ink rim for punch
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius - 1, start + pad, start + arc - pad, false);
+      ctx.strokeStyle = "#2a2826";
+      ctx.lineWidth = 3.5;
+      ctx.stroke();
     }
 
     // hub
     ctx.beginPath();
     ctx.arc(cx, cy, 34, 0, Math.PI * 2);
-    ctx.fillStyle = "#071018";
+    ctx.fillStyle = "#2a2826";
     ctx.fill();
     ctx.beginPath();
     ctx.arc(cx, cy, 22, 0, Math.PI * 2);
-    ctx.fillStyle = "#ffb020";
+    ctx.fillStyle = "#f7f5f1";
     ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx, cy, 22, 0, Math.PI * 2);
+    ctx.strokeStyle = "#2a2826";
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
   }
 
   function animateWheelToIndex(players, targetIndex, token) {
@@ -1448,19 +1642,315 @@
     });
 
     const ready = activePlayers().length >= 2;
+    const sub = document.querySelector("#screen-lobby .section-sub");
+    if (sub) {
+      sub.textContent = me.isHost
+        ? "Share the link. When everyone’s in, you start the game."
+        : "You’re in. Wait for the host to start — only they can begin.";
+    }
+
     els.lobbyStatus.textContent = ready
       ? `${activePlayers().length} players ready`
       : "Waiting for players…";
     els.lobbyHint.textContent = ready
       ? me.isHost
         ? "You’re the host — open the question pool when everyone is in."
-        : "Waiting for the host to open the question pool."
-      : "Need at least 2 players to start.";
+        : "Waiting for the host to start. You don’t need to do anything else yet."
+      : me.isHost
+        ? "Need at least 2 players to start."
+        : "Waiting for more players… the host will start when ready.";
 
     els.btnStartQuestions.hidden = !me.isHost;
-    els.btnStartQuestions.disabled = !ready;
+    els.btnStartQuestions.disabled = !ready || !me.isHost;
     if (els.btnStartQuestions) {
-      els.btnStartQuestions.textContent = "Open question pool";
+      els.btnStartQuestions.textContent = "Start — open question pool";
+      els.btnStartQuestions.setAttribute("aria-hidden", me.isHost ? "false" : "true");
+      if (!me.isHost) {
+        els.btnStartQuestions.style.display = "none";
+      } else {
+        els.btnStartQuestions.style.display = "";
+      }
+    }
+  }
+
+  function shuffleCopy(arr) {
+    return shuffleInPlace(arr.slice());
+  }
+
+  function bankForFilter() {
+    if (!ideaFilter) return IDEA_BANK.slice();
+    return IDEA_BANK.filter((item) => item.vibe === ideaFilter);
+  }
+
+  function stampIdeaIds(list, prefix) {
+    return list.map((item, i) => ({
+      ...item,
+      id: `${prefix}-${i}-${item.text.slice(0, 14)}`,
+    }));
+  }
+
+  function syncIdeaFilterButtons() {
+    document.querySelectorAll("[data-idea-filter]").forEach((btn) => {
+      const vibe = btn.getAttribute("data-idea-filter");
+      const on = ideaFilter === vibe;
+      btn.classList.toggle("is-active", on);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  function rebuildIdeaReelFromFilter() {
+    let pool = shuffleCopy(bankForFilter());
+    if (pendingIdea) {
+      pool = pool.filter((item) => item.text !== pendingIdea.text);
+    }
+    const stamped = stampIdeaIds(pool, ideaFilter || "all");
+    ideaReel = stamped.slice(0, Math.min(IDEA_REEL_SIZE, stamped.length));
+    ideaReserve = stamped.slice(ideaReel.length);
+    if (
+      pendingReplacementId &&
+      !ideaReel.some((x) => x.id === pendingReplacementId)
+    ) {
+      pendingReplacementId = null;
+    }
+    ideaOffset = 0;
+    paintIdeaReel();
+    syncIdeaFilterButtons();
+  }
+
+  function setIdeaFilter(vibe) {
+    ideaFilter = ideaFilter === vibe ? null : vibe;
+    rebuildIdeaReelFromFilter();
+  }
+
+  function resetIdeaReel() {
+    pendingIdea = null;
+    pendingReplacementId = null;
+    rebuildIdeaReelFromFilter();
+  }
+
+  function ideaMod(n, m) {
+    return ((n % m) + m) % m;
+  }
+
+  function paintIdeaReel() {
+    const reel = els.ideasReel;
+    if (!reel) return;
+    if (!ideaReel.length) {
+      reel.innerHTML = "";
+      const empty = document.createElement("p");
+      empty.className = "ideas-empty";
+      empty.textContent = ideaFilter
+        ? `No ${ideaFilter} prompts left — try the other filter`
+        : "No prompts left";
+      reel.appendChild(empty);
+      return;
+    }
+    const n = ideaReel.length;
+    const center = ideaMod(Math.round(ideaOffset), n);
+    const half = Math.floor(IDEA_VISIBLE / 2);
+    reel.innerHTML = "";
+
+    for (let slot = -half; slot <= half; slot++) {
+      const idx = ideaMod(center + slot, n);
+      const item = ideaReel[idx];
+      const dist = slot - (ideaOffset - Math.round(ideaOffset));
+      const angle = dist * 22;
+      const y = dist * IDEA_ITEM_H;
+      const scale = Math.max(0.72, 1 - Math.abs(dist) * 0.1);
+      const opacity = Math.max(0.18, 1 - Math.abs(dist) * 0.28);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ideas-item";
+      if (Math.abs(dist) < 0.35) btn.classList.add("is-center");
+      btn.dataset.vibe = item.vibe;
+      btn.dataset.id = item.id;
+      btn.title = "Tap to fill the question box";
+      btn.innerHTML = `<span>${escapeHtml(item.text)}</span>`;
+      btn.style.transform = `translate(-50%, -50%) translateY(${y}px) rotateX(${-angle}deg) scale(${scale})`;
+      btn.style.left = "50%";
+      btn.style.width = "calc(100% - 1.1rem)";
+      btn.style.opacity = String(opacity);
+      btn.style.zIndex = String(20 - Math.abs(Math.round(dist)));
+      reel.appendChild(btn);
+    }
+  }
+
+  function fillQuestionFromIdea(text) {
+    const input = els.questionInput || document.getElementById("question-input");
+    if (!input) return;
+    input.value = text;
+    input.focus();
+    try {
+      const len = text.length;
+      input.setSelectionRange(len, len);
+    } catch (_) {
+      /* some browsers dislike setSelectionRange on empty */
+    }
+  }
+
+  function restorePendingIdeaToReel() {
+    if (!pendingIdea) return;
+    // Pull out the stand-in that filled its slot, if still on the reel
+    if (pendingReplacementId) {
+      const rIdx = ideaReel.findIndex((x) => x.id === pendingReplacementId);
+      if (rIdx >= 0) {
+        const [standIn] = ideaReel.splice(rIdx, 1);
+        ideaReserve.unshift(standIn);
+      }
+    }
+    const fitsFilter = !ideaFilter || pendingIdea.vibe === ideaFilter;
+    if (fitsFilter && !ideaReel.some((x) => x.id === pendingIdea.id || x.text === pendingIdea.text)) {
+      ideaReel.unshift(pendingIdea);
+    }
+    pendingIdea = null;
+    pendingReplacementId = null;
+    if (ideaReel.length) {
+      ideaOffset = ideaMod(Math.round(ideaOffset), ideaReel.length);
+    }
+    paintIdeaReel();
+  }
+
+  function clearPendingIdeaConsumed() {
+    pendingIdea = null;
+    pendingReplacementId = null;
+  }
+
+  function pickIdeaSuggestion(id) {
+    if (state?.questionsLocked) return;
+    // Putting a new prompt in the box abandons the previous unsubmitted one
+    if (pendingIdea && pendingIdea.id !== id) {
+      restorePendingIdeaToReel();
+    }
+    const idx = ideaReel.findIndex((x) => x.id === id);
+    if (idx < 0) return;
+    const [picked] = ideaReel.splice(idx, 1);
+    pendingIdea = picked;
+    pendingReplacementId = null;
+
+    if (ideaReserve.length) {
+      const standIn = ideaReserve.shift();
+      pendingReplacementId = standIn.id;
+      const insertAt = Math.min(idx, ideaReel.length);
+      ideaReel.splice(insertAt, 0, standIn);
+    } else if (!ideaReel.length) {
+      // Last prompt on the reel — leave wheel empty until they abandon or submit
+      fillQuestionFromIdea(picked.text);
+      paintIdeaReel();
+      return;
+    }
+
+    fillQuestionFromIdea(picked.text);
+    ideaOffset = ideaMod(Math.round(ideaOffset), Math.max(ideaReel.length, 1));
+    paintIdeaReel();
+  }
+
+  function syncPendingIdeaWithInput() {
+    if (!pendingIdea) return;
+    const input = els.questionInput || document.getElementById("question-input");
+    const current = (input?.value || "").trim();
+    // Still holding the exact prompt → keep it out of the wheel
+    if (current === pendingIdea.text.trim()) return;
+    // Cleared or edited → return prompt to the reel
+    restorePendingIdeaToReel();
+  }
+
+  function nudgeIdeaReel(delta) {
+    if (!ideaReel.length) return;
+    ideaOffset += delta;
+    paintIdeaReel();
+  }
+
+  function wireIdeasWheel() {
+    if (ideasWired || !els.ideasWheel) return;
+    ideasWired = true;
+    const wheel = els.ideasWheel;
+
+    document.querySelectorAll("[data-idea-filter]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        const vibe = btn.getAttribute("data-idea-filter");
+        if (!vibe) return;
+        setIdeaFilter(vibe);
+      });
+    });
+
+    wheel.addEventListener(
+      "wheel",
+      (e) => {
+        e.preventDefault();
+        const dir = e.deltaY > 0 ? 0.28 : -0.28;
+        nudgeIdeaReel(dir);
+      },
+      { passive: false }
+    );
+
+    const onDown = (clientY) => {
+      ideasDrag = { y: clientY, offset: ideaOffset, moved: 0 };
+      wheel.classList.add("is-dragging");
+    };
+    const onMove = (clientY) => {
+      if (!ideasDrag) return;
+      const dy = clientY - ideasDrag.y;
+      ideasDrag.moved = Math.max(ideasDrag.moved || 0, Math.abs(dy));
+      // Ignore micro-jitter so taps don't rebuild the reel mid-click
+      if (ideasDrag.moved <= 10) return;
+      ideaOffset = ideasDrag.offset - dy / IDEA_ITEM_H;
+      paintIdeaReel();
+    };
+    const onUp = (e) => {
+      if (!ideasDrag) return;
+      const moved = ideasDrag.moved || 0;
+      ideasDrag = null;
+      wheel.classList.remove("is-dragging");
+
+      // Tap (not a drag): fill the text box from the prompt under the pointer
+      if (moved <= 10) {
+        const under =
+          (e && typeof e.clientX === "number"
+            ? document.elementFromPoint(e.clientX, e.clientY)
+            : null)?.closest?.(".ideas-item") || null;
+        if (under?.dataset?.id) {
+          pickIdeaSuggestion(under.dataset.id);
+          return;
+        }
+        if (ideaReel.length) {
+          const center = ideaMod(Math.round(ideaOffset), ideaReel.length);
+          pickIdeaSuggestion(ideaReel[center].id);
+          return;
+        }
+      }
+
+      ideaOffset = Math.round(ideaOffset);
+      paintIdeaReel();
+    };
+
+    wheel.addEventListener("pointerdown", (e) => {
+      if (e.button != null && e.button !== 0) return;
+      // Don't capture yet — allows the button to remain the click target on taps
+      onDown(e.clientY);
+    });
+    wheel.addEventListener("pointermove", (e) => {
+      if (!ideasDrag) return;
+      if ((ideasDrag.moved || 0) > 4 && !wheel.hasPointerCapture?.(e.pointerId)) {
+        try {
+          wheel.setPointerCapture(e.pointerId);
+        } catch (_) {}
+      }
+      onMove(e.clientY);
+    });
+    wheel.addEventListener("pointerup", onUp);
+    wheel.addEventListener("pointercancel", onUp);
+  }
+
+  function ensureIdeasPanel() {
+    wireIdeasWheel();
+    if (!ideaReel.length) resetIdeaReel();
+    else {
+      paintIdeaReel();
+      syncIdeaFilterButtons();
+    }
+    if (els.ideasPanel) {
+      els.ideasPanel.classList.toggle("is-locked", !!state?.questionsLocked);
     }
   }
 
@@ -1483,9 +1973,15 @@
     const sub = document.querySelector("#screen-questions .section-sub");
     if (title) title.textContent = "Question pool";
     if (sub) {
-      sub.textContent = ready
-        ? "Pool ready! Keep adding until the timer ends, or the host can start now."
-        : `One shared pot · at least ${minQ} questions (${nPlayers}×5) · ${formatTime(Math.max(0, remaining))} left to add more.`;
+      if (me.isHost) {
+        sub.textContent = ready
+          ? "Pool ready! Keep adding until the timer ends, or start the game now."
+          : `One shared pot · at least ${minQ} questions (${nPlayers}×5) · ${formatTime(Math.max(0, remaining))} left to add more.`;
+      } else {
+        sub.textContent = ready
+          ? "Pool ready. Keep adding questions — the host will start the game."
+          : `Add questions to the pot · need ${minQ} total (${nPlayers}×5) · waiting on the host to start.`;
+      }
     }
 
     const statusEl = document.getElementById("pool-status");
@@ -1496,23 +1992,31 @@
       statusEl.classList.toggle("pool-ready", ready);
     }
 
-    // Host can start early once minimum is met
+    // Host-only: start the wheel once the pool minimum is met
     let hostBtn = document.getElementById("btn-start-game");
-    if (!hostBtn && els.questionForm?.parentElement) {
-      hostBtn = document.createElement("button");
-      hostBtn.type = "button";
-      hostBtn.id = "btn-start-game";
-      hostBtn.className = "btn btn-primary btn-lg";
-      hostBtn.style.marginTop = "0.75rem";
-      els.questionForm.parentElement.appendChild(hostBtn);
-    }
-    if (hostBtn) {
-      hostBtn.hidden = !me.isHost;
-      hostBtn.disabled = !ready || !!state.questionsLocked;
-      hostBtn.textContent = ready
-        ? `Start game now (${have} in pool)`
-        : `Need ${minQ - have} more question${minQ - have === 1 ? "" : "s"}`;
-      hostBtn.onclick = () => send({ type: "questionsDone" });
+    if (!me.isHost) {
+      if (hostBtn) hostBtn.remove();
+    } else {
+      if (!hostBtn && els.questionForm?.parentElement) {
+        hostBtn = document.createElement("button");
+        hostBtn.type = "button";
+        hostBtn.id = "btn-start-game";
+        hostBtn.className = "btn btn-primary btn-lg";
+        hostBtn.style.marginTop = "0.75rem";
+        els.questionForm.parentElement.appendChild(hostBtn);
+      }
+      if (hostBtn) {
+        hostBtn.hidden = false;
+        hostBtn.style.display = "";
+        hostBtn.disabled = !ready || !!state.questionsLocked;
+        hostBtn.textContent = ready
+          ? `Start game now (${have} in pool)`
+          : `Need ${minQ - have} more question${minQ - have === 1 ? "" : "s"}`;
+        hostBtn.onclick = () => {
+          if (!me.isHost) return;
+          send({ type: "questionsDone", playerId: me.id });
+        };
+      }
     }
 
     const legacyBtn = document.getElementById("btn-begin-finals");
@@ -1529,6 +2033,8 @@
     const addBtn = els.questionForm?.querySelector('button[type="submit"]');
     if (addBtn) addBtn.disabled = !!state.questionsLocked;
 
+    ensureIdeasPanel();
+
     questionTick = setInterval(() => {
       if (!state || state.phase !== "questions" || state.questionsLocked) return;
       const left = ((state.questionEndsAt || Date.now()) - Date.now()) / 1000;
@@ -1542,7 +2048,7 @@
       questionTick = null;
       const minNeeded = activePlayers().length * 5;
       if ((state.questions?.length || 0) >= minNeeded) {
-        handleAction({ type: "questionsDone" });
+        handleAction({ type: "questionsDone", playerId: me.id });
       } else {
         // Keep the window open until the minimum is met
         state.questionEndsAt = Date.now() + QUESTION_SECONDS * 1000;
@@ -1806,21 +2312,33 @@
     const canReveal = me.id === state.revealForId;
     if (canReveal && (state.questions?.length || 0) > 0) {
       els.revealPanel.hidden = false;
-      els.revealList.innerHTML = "";
-      (state.questions || []).forEach((q) => {
-        const li = document.createElement("li");
-        const tag = q.reservedForRapidFire
-          ? q.used
-            ? "Rapid fire"
-            : "Rapid fire (unused)"
-          : q.used
-            ? "Answered"
-            : "Unused";
-        li.innerHTML = `<span class="q">[${tag}] ${escapeHtml(q.text)}</span><span class="by">— ${escapeHtml(q.authorName || "?")}</span>`;
-        els.revealList.appendChild(li);
-      });
+      if (!revealCurtainPlayed) {
+        els.revealList.innerHTML = "";
+        (state.questions || []).forEach((q, i) => {
+          const li = document.createElement("li");
+          li.style.setProperty("--i", String(i));
+          const tag = q.reservedForRapidFire
+            ? q.used
+              ? "Rapid fire"
+              : "Rapid fire (unused)"
+            : q.used
+              ? "Answered"
+              : "Unused";
+          li.innerHTML = `<span class="q">[${tag}] ${escapeHtml(q.text)}</span><span class="by">— ${escapeHtml(q.authorName || "?")}</span>`;
+          els.revealList.appendChild(li);
+        });
+        els.revealPanel.classList.remove("is-open");
+        // Brief beat with curtains closed, then swish open
+        void els.revealPanel.offsetWidth;
+        setTimeout(() => {
+          if (!els.revealPanel || els.revealPanel.hidden) return;
+          els.revealPanel.classList.add("is-open");
+        }, 420);
+        revealCurtainPlayed = true;
+      }
     } else {
       els.revealPanel.hidden = true;
+      els.revealPanel.classList.remove("is-open");
       if (!canReveal) {
         els.endSub.textContent += " Only whoever answered the most can see who wrote each question.";
       }
@@ -1864,6 +2382,12 @@
     const code = roomCode();
     me = { id: uid(), name, isHost: true };
     myLocalQuestions = [];
+    ideaReel = [];
+    ideaReserve = [];
+    ideaOffset = 0;
+    pendingIdea = null;
+    pendingReplacementId = null;
+    ideaFilter = null;
     lastSpinToken = -1;
 
     const player = {
@@ -1956,6 +2480,12 @@
       isHost: !!opts.resumeAsHost,
     };
     myLocalQuestions = [];
+    ideaReel = [];
+    ideaReserve = [];
+    ideaOffset = 0;
+    pendingIdea = null;
+    pendingReplacementId = null;
+    ideaFilter = null;
     lastSpinToken = -1;
     state = null;
 
@@ -1966,6 +2496,7 @@
         let joined = false;
         sync.onState = (st) => {
           state = st;
+          restoreMyLocalQuestionsFromState();
           render();
           saveSession();
           if (!joined && !opts.resumeId) {
@@ -1992,6 +2523,11 @@
         await new Promise((r) => setTimeout(r, 400));
         if (!state && sync) throw new Error("No local room found. Create one first on this device.");
         if (!sync) return; // name was taken and cleaned up
+        if (opts.resumeId) {
+          restoreMyLocalQuestionsFromState();
+          recoverHostProgress();
+          render();
+        }
       } else if (me.isHost) {
         attachSyncHandlers();
         const hostPlayer = {
@@ -2005,7 +2541,13 @@
         };
         await sync.start({ hostPlayer, resume: true });
         const players = await sync.fetchPlayers();
+        const meRow = players.find((p) => p.id === me.id);
+        me.isHost = meRow ? !!meRow.isHost : true;
+        sync.isHost = me.isHost;
         applyPlayers(players);
+        restoreMyLocalQuestionsFromState();
+        recoverHostProgress();
+        render();
       } else {
         attachSyncHandlers();
         const joinPlayer = {
@@ -2019,6 +2561,15 @@
         };
         await sync.start({ joinPlayer, resume: !!resumeId });
         if (!state) throw new Error("Room not found. Check ?room=CODE.");
+        const players = state.players || [];
+        const meRow = players.find((p) => p.id === me.id);
+        if (meRow) {
+          me.isHost = !!meRow.isHost;
+          sync.isHost = me.isHost;
+        }
+        restoreMyLocalQuestionsFromState();
+        if (me.isHost) recoverHostProgress();
+        render();
       }
 
       const url = new URL(location.href);
@@ -2143,13 +2694,20 @@
   });
 
   els.btnStartQuestions.addEventListener("click", () => {
-    send({ type: "startQuestions" });
+    if (!me.isHost) return;
+    send({ type: "startQuestions", playerId: me.id });
   });
 
   els.questionForm.addEventListener("submit", (e) => {
     e.preventDefault();
     const text = els.questionInput.value.trim();
     if (!text) return;
+    // Submitted the pending prompt → keep it off the reel. Otherwise return it.
+    if (pendingIdea && text === pendingIdea.text.trim()) {
+      clearPendingIdeaConsumed();
+    } else {
+      restorePendingIdeaToReel();
+    }
     myLocalQuestions.push({ text });
     send({ type: "addQuestion", playerId: me.id, text });
     els.questionInput.value = "";
@@ -2159,6 +2717,10 @@
       els.questionFeedback.hidden = true;
     }, 1600);
     if (state?.phase === "questions") renderQuestions();
+  });
+
+  els.questionInput?.addEventListener("input", () => {
+    syncPendingIdeaWithInput();
   });
 
   els.buzzerMain?.addEventListener("pointerdown", (e) => {
@@ -2202,6 +2764,15 @@
     state = null;
     me = { id: null, name: "", isHost: false };
     myLocalQuestions = [];
+    revealCurtainPlayed = false;
+    ideaReel = [];
+    ideaReserve = [];
+    ideaOffset = 0;
+    pendingIdea = null;
+    pendingReplacementId = null;
+    ideaFilter = null;
+    els.revealPanel?.classList.remove("is-open");
+    if (els.revealList) els.revealList.innerHTML = "";
     history.replaceState(null, "", "/");
     resetHomeToFirstLook();
     showScreen("home");
@@ -2256,10 +2827,27 @@
   }
 
   (async () => {
+    const tryResume = async (code) => {
+      if (!code) return false;
+      return resumeRoom(String(code).toUpperCase());
+    };
+
+    const nav = performance.getEntriesByType?.("navigation")?.[0];
+    const isReload = nav?.type === "reload";
+
+    let resumed = false;
     if (presetRoom) {
-      const resumed = await resumeRoom(presetRoom);
+      resumed = await tryResume(presetRoom);
       if (!resumed) enableInviteHome(presetRoom);
-    } else if (params.get("host") !== "1") {
+    } else if (isReload) {
+      // Mid-game refresh: restore last room even if ?room= dropped
+      const active = loadActiveRoomCode();
+      if (active && loadSession(active)) {
+        resumed = await tryResume(active);
+      }
+    }
+
+    if (!resumed && !presetRoom && params.get("host") !== "1") {
       location.replace("/");
       return;
     }

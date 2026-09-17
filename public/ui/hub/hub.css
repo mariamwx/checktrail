@@ -1,110 +1,100 @@
-/* Placeholder hub styles — replace freely. Keep class names used by app/page.tsx. */
+/* Hub — editorial poster composition */
 
 .hub {
-  min-height: 100dvh;
   margin: 0;
-  padding:
-    max(1.5rem, env(safe-area-inset-top))
-    max(1rem, env(safe-area-inset-right))
-    max(1.5rem, env(safe-area-inset-bottom))
-    max(1rem, env(safe-area-inset-left));
-  font-family: "Outfit", system-ui, sans-serif;
-  color: #e8f4ff;
-  background:
-    radial-gradient(ellipse 70% 50% at 15% 10%, rgba(200, 245, 66, 0.14), transparent 55%),
-    radial-gradient(ellipse 60% 45% at 90% 20%, rgba(47, 95, 173, 0.18), transparent 50%),
-    #071018;
-  -webkit-tap-highlight-color: transparent;
 }
 
-.hub-inner {
-  max-width: 640px;
-  margin: 0 auto;
+.hub-stage {
+  display: grid;
+  place-items: center;
+  position: relative;
+  min-height: 100dvh;
 }
 
-.hub-brand {
-  margin: 0 0 0.75rem;
-  font-family: "Bebas Neue", sans-serif;
-  font-size: clamp(2.75rem, 14vw, 5rem);
-  letter-spacing: 0.06em;
-  color: #c8f542;
-  line-height: 0.9;
-}
-
-.hub-title {
-  font-family: "Bebas Neue", sans-serif;
-  font-size: clamp(1.85rem, 8vw, 3.2rem);
-  letter-spacing: 0.03em;
-  margin: 0 0 0.5rem;
-  font-weight: 400;
-}
-
-.hub-sub {
-  color: #8aa3b5;
-  margin: 0 0 1.75rem;
-  max-width: 36ch;
-  line-height: 1.45;
-  font-size: 0.98rem;
+.hub-frame {
+  width: min(100%, 480px);
+  padding-top: clamp(2rem, 8vh, 4rem);
+  padding-bottom: clamp(2rem, 6vh, 3.5rem);
 }
 
 .hub-grid {
   display: grid;
-  gap: 0.85rem;
+  gap: 0;
+  border-top: 2.5px solid var(--iso-line);
 }
 
 .hub-card {
+  position: relative;
   text-decoration: none;
   color: inherit;
-  display: block;
-  padding: 1.25rem 1.2rem;
-  min-height: 88px;
-  border-radius: 16px;
-  -webkit-tap-highlight-color: transparent;
+  display: grid;
+  gap: 0.35rem;
+  padding: 1.35rem 0 1.45rem;
+  min-height: auto;
+  background: transparent;
+  border: none;
+  border-bottom: 2.5px solid var(--iso-line);
+  border-radius: 0;
+  box-shadow: none;
+  transition: background 0.15s ease, padding-left 0.15s ease;
 }
 
-.hub-card--c1 {
-  border: 1px solid rgba(200, 245, 66, 0.35);
-  background: rgba(18, 36, 51, 0.85);
+.hub-card:hover {
+  transform: none;
+  box-shadow: none;
+  background: rgba(255, 255, 255, 0.45);
+  padding-left: 0.65rem;
 }
 
-.hub-card--c2 {
-  border: 1px solid rgba(47, 95, 173, 0.55);
-  background: rgba(18, 21, 28, 0.9);
+.hub-card:active {
+  transform: none;
+  box-shadow: none;
+}
+
+.hub-card-dot {
+  position: absolute;
+  top: 1.45rem;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 1px;
+  border: 2px solid var(--iso-line);
+}
+
+.hub-card-dot--red {
+  background: var(--iso-red);
+}
+
+.hub-card-dot--blue {
+  background: var(--iso-blue);
+}
+
+.hub-card-dot--green {
+  background: var(--iso-green);
 }
 
 .hub-card-eyebrow {
-  display: inline-block;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  margin-bottom: 6px;
-}
-
-.hub-card--c1 .hub-card-eyebrow {
-  color: #c8f542;
-}
-
-.hub-card--c2 .hub-card-eyebrow {
-  color: #9bb8ef;
+  color: var(--iso-muted);
 }
 
 .hub-card-name {
-  display: block;
-  font-size: clamp(1.15rem, 5vw, 1.375rem);
+  font-family: var(--iso-display);
+  font-size: clamp(1.55rem, 5vw, 1.95rem);
   font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
 }
 
 .hub-card-desc {
-  display: block;
-  margin-top: 4px;
-  font-size: 14px;
-}
-
-.hub-card--c1 .hub-card-desc {
-  color: #8aa3b5;
-}
-
-.hub-card--c2 .hub-card-desc {
-  color: #8b93a7;
+  margin-top: 0.2rem;
+  color: var(--iso-muted);
+  font-size: 0.9rem;
+  font-weight: 400;
+  line-height: 1.4;
+  max-width: 32ch;
+  letter-spacing: 0.01em;
 }

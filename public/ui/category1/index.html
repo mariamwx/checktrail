@@ -3,22 +3,53 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Anon Wheel — Party Questions</title>
+  <title>Icebreaker — Party Questions</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Syne:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/ui/shared/iso-theme.css" />
   <link rel="stylesheet" href="/ui/category1/styles.css" />
 </head>
-<body>
-  <div class="bg-noise" aria-hidden="true"></div>
-  <div class="bg-glow" aria-hidden="true"></div>
+<body class="iso-world">
+  <div class="iso-grid" aria-hidden="true"></div>
+  <div class="guys" aria-hidden="true">
+    <div class="guy guy--pill guy--green guy-p1">
+      <span class="guy-acc"><i class="guy-slash"></i><i class="guy-dot"></i></span>
+    </div>
+    <div class="guy guy--tall guy--red guy-p2">
+      <span class="guy-acc"><i class="guy-bar"></i></span>
+    </div>
+    <div class="guy guy--l guy--teal guy-p3"></div>
+    <div class="guy guy--circle guy--blue guy-p4">
+      <span class="guy-acc"><i class="guy-ring"></i></span>
+    </div>
+    <div class="guy guy--blob guy--violet guy-p5">
+      <span class="guy-acc"><i class="guy-tick"></i></span>
+    </div>
+    <div class="guy guy--tri guy--teal guy-p6">
+      <span class="guy-body"></span>
+      <span class="guy-acc"><i class="guy-slash"></i></span>
+    </div>
+    <div class="guy guy--square guy--red guy-p7 guy-hide-sm"></div>
+    <div class="guy guy--capsule guy--blue guy-p8">
+      <span class="guy-acc"><i class="guy-dot"></i></span>
+    </div>
+    <div class="guy guy--diamond guy--green guy-p9 guy-hide-sm"></div>
+    <div class="guy guy--pill guy--teal guy-p10">
+      <span class="guy-acc"><i class="guy-bar"></i><i class="guy-slash"></i></span>
+    </div>
+    <div class="guy guy--circle guy--green guy-p11"></div>
+    <div class="guy guy--blob guy--red guy-p12 guy-hide-sm">
+      <span class="guy-acc"><i class="guy-ring"></i></span>
+    </div>
+  </div>
 
-  <div id="app">
+  <div id="app" class="iso-stage">
     <!-- JOIN / CREATE -->
     <section id="screen-home" class="screen active">
       <div class="home-stage">
-        <p class="category-badge">Category 1</p>
-        <p class="brand">Anon Wheel</p>
+        <p class="category-badge">Game mode 1</p>
+        <p class="brand">Icebreaker</p>
         <h1 class="home-title">Shout it out.<br />No names attached.</h1>
         <p class="home-sub">Add questions in secret. Spin the wheel. Top two face the buzzer with what’s left.</p>
 
@@ -37,16 +68,13 @@
           </div>
         </form>
         <p id="home-error" class="error-msg" hidden></p>
-        <p class="hint" style="margin-top:1.25rem;max-width:42ch">
-          Category 1 data lives in the Supabase schema <code>category_one</code> (rooms, players, questions). Share <code>?room=ABC123</code> so everyone joins the same lobby.
-        </p>
-        <p class="hint"><a href="/category2.html" style="color:inherit">Category 2: Mirror Vote →</a></p>
+        <p class="hint"><a href="/category2.html">Game mode 2: Mirror Vote →</a></p>
       </div>
     </section>
     <!-- LOBBY -->
     <section id="screen-lobby" class="screen">
       <header class="topbar">
-        <p class="brand-sm">Anon Wheel</p>
+        <p class="brand-sm">Icebreaker</p>
         <div class="room-chip">
           <span>Room</span>
           <strong id="lobby-code">————</strong>
@@ -57,7 +85,7 @@
       <div class="lobby-layout">
         <div>
           <h2 class="section-title">Players in the room</h2>
-          <p class="section-sub">Share the link. When everyone’s in, the host starts the clock.</p>
+          <p class="section-sub">Share the link. When everyone’s in, the host starts the game.</p>
           <ul id="player-list" class="player-list"></ul>
         </div>
         <aside class="lobby-aside">
@@ -73,7 +101,7 @@
     <!-- QUESTION SUBMIT -->
     <section id="screen-questions" class="screen">
       <header class="topbar">
-        <p class="brand-sm">Anon Wheel</p>
+        <p class="brand-sm">Icebreaker</p>
         <div class="timer-chip" id="question-timer">3:00</div>
       </header>
 
@@ -89,6 +117,24 @@
           <p id="question-feedback" class="feedback" hidden></p>
         </div>
 
+        <aside class="ideas-panel" id="ideas-panel" aria-label="Question ideas">
+          <p class="ideas-eyebrow">Ideas</p>
+          <h3 class="ideas-title">Steal a prompt</h3>
+          <p class="ideas-hint">Scroll the reel · tap to fill your box</p>
+          <div class="ideas-wheel" id="ideas-wheel">
+            <div class="ideas-wheel-fade ideas-wheel-fade--top" aria-hidden="true"></div>
+            <div class="ideas-wheel-viewport" id="ideas-viewport">
+              <ul class="ideas-reel" id="ideas-reel"></ul>
+            </div>
+            <div class="ideas-wheel-fade ideas-wheel-fade--bottom" aria-hidden="true"></div>
+            <div class="ideas-wheel-frame" aria-hidden="true"></div>
+          </div>
+          <div class="ideas-legend" role="group" aria-label="Filter prompts">
+            <button type="button" class="ideas-tag ideas-tag--hot" data-idea-filter="salacious" aria-pressed="false">salacious</button>
+            <button type="button" class="ideas-tag ideas-tag--deep" data-idea-filter="philosophical" aria-pressed="false">philosophical</button>
+          </div>
+        </aside>
+
         <aside class="questions-aside">
           <p class="stat-label">Question pool</p>
           <p class="stat-value" id="question-count">0</p>
@@ -101,7 +147,7 @@
     <!-- MAIN GAME (wheel + answer) -->
     <section id="screen-game" class="screen">
       <header class="topbar">
-        <p class="brand-sm">Anon Wheel</p>
+        <p class="brand-sm">Icebreaker</p>
         <div class="score-strip" id="score-strip"></div>
       </header>
 
@@ -123,7 +169,7 @@
     <!-- FINALS -->
     <section id="screen-finals" class="screen">
       <header class="topbar">
-        <p class="brand-sm">Anon Wheel</p>
+        <p class="brand-sm">Icebreaker</p>
         <p class="finals-tag">Rapid Fire</p>
       </header>
 
@@ -165,13 +211,30 @@
     <!-- REVEAL / END -->
     <section id="screen-end" class="screen">
       <div class="end-stage">
-        <p class="brand">Anon Wheel</p>
+        <p class="brand">Icebreaker</p>
         <h2 class="section-title" id="end-title">Game over</h2>
         <p class="section-sub" id="end-sub"></p>
 
         <div id="reveal-panel" class="reveal-panel" hidden>
-          <h3>Who wrote what</h3>
-          <ul id="reveal-list" class="reveal-list"></ul>
+          <div class="reveal-stage">
+            <div class="reveal-curtains" aria-hidden="true">
+              <div class="reveal-curtain reveal-curtain--left">
+                <span class="reveal-curtain-fold"></span>
+                <span class="reveal-curtain-fold reveal-curtain-fold--2"></span>
+                <span class="reveal-curtain-stripe"></span>
+              </div>
+              <div class="reveal-curtain reveal-curtain--right">
+                <span class="reveal-curtain-fold"></span>
+                <span class="reveal-curtain-fold reveal-curtain-fold--2"></span>
+                <span class="reveal-curtain-stripe"></span>
+              </div>
+              <p class="reveal-curtain-label">Authors</p>
+            </div>
+            <div class="reveal-content">
+              <h3>Who wrote what</h3>
+              <ul id="reveal-list" class="reveal-list"></ul>
+            </div>
+          </div>
         </div>
 
         <div id="standings" class="standings"></div>

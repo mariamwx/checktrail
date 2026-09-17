@@ -1,0 +1,596 @@
+/* Shared editorial / indie illustration world — hub + Category 1/2
+   Aesthetic: geometric · minimal · hand-drawn · surreal · graphic */
+
+:root {
+  --iso-bg: #ebe7e0;
+  --iso-line: #2a2826;
+  --iso-panel: #f7f5f1;
+  --iso-ink: #1c1b19;
+  --iso-muted: #6e6a64;
+  --iso-red: #b83a3a;
+  --iso-teal: #2a7d7a;
+  --iso-green: #4a7a45;
+  --iso-blue: #2f4f9b;
+  --iso-shadow: transparent;
+  --iso-font: "DM Sans", system-ui, sans-serif;
+  --iso-display: "Syne", system-ui, sans-serif;
+  --iso-radius: 2px;
+  --iso-outline: 2.5px solid var(--iso-line);
+  --iso-cell: 72px;
+}
+
+.iso-world {
+  position: relative;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  background: var(--iso-bg);
+  color: var(--iso-ink);
+  font-family: var(--iso-font);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Subtle diagonal perspective grid */
+.iso-grid {
+  position: fixed;
+  inset: -25%;
+  z-index: 0;
+  pointer-events: none;
+  background-color: var(--iso-bg);
+  background-image:
+    linear-gradient(
+      58deg,
+      transparent 0,
+      transparent calc(50% - 0.5px),
+      rgba(42, 40, 38, 0.14) calc(50% - 0.5px),
+      rgba(42, 40, 38, 0.14) calc(50% + 0.5px),
+      transparent calc(50% + 0.5px)
+    ),
+    linear-gradient(
+      -58deg,
+      transparent 0,
+      transparent calc(50% - 0.5px),
+      rgba(42, 40, 38, 0.14) calc(50% - 0.5px),
+      rgba(42, 40, 38, 0.14) calc(50% + 0.5px),
+      transparent calc(50% + 0.5px)
+    );
+  background-size: var(--iso-cell) calc(var(--iso-cell) * 0.866);
+  opacity: 0.9;
+  transform: scale(1.08) rotate(-1deg);
+}
+
+.iso-stage {
+  position: relative;
+  z-index: 2;
+  min-height: 100dvh;
+  padding:
+    max(1.25rem, env(safe-area-inset-top))
+    max(1rem, env(safe-area-inset-right))
+    max(1.5rem, env(safe-area-inset-bottom))
+    max(1rem, env(safe-area-inset-left));
+}
+
+.iso-scatter {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.iso-scatter img {
+  display: none;
+}
+
+/* ========== Deadpan geometric figures ========== */
+.guys {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.guy {
+  --guy: var(--iso-green);
+  position: absolute;
+  left: var(--x, 10%);
+  top: var(--y, 10%);
+  width: var(--w, 64px);
+  height: var(--h, 44px);
+  background: var(--guy);
+  border: 2.5px solid var(--iso-line);
+  border-radius: 3px;
+  box-shadow: none;
+  transform: rotate(var(--r, 0deg));
+  animation: guy-drift 9s ease-in-out infinite;
+  animation-delay: var(--delay, 0s);
+}
+
+@keyframes guy-drift {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -6px; }
+}
+
+/* Minimal charcoal eyes — small dots, not cute white circles */
+.guy::before,
+.guy::after {
+  content: "";
+  position: absolute;
+  top: 42%;
+  width: var(--eye, 5px);
+  height: var(--eye, 5px);
+  margin-top: calc(var(--eye, 5px) / -2);
+  border-radius: 1px;
+  background: var(--iso-line);
+  z-index: 1;
+  opacity: 0.85;
+}
+
+.guy::before {
+  left: calc(50% - var(--eye, 5px) - 5px);
+}
+
+.guy::after {
+  left: calc(50% + 5px);
+}
+
+/* Shapes — imperfect / slightly awkward */
+.guy--pill {
+  --w: 74px;
+  --h: 40px;
+  border-radius: 20px 18px 22px 16px;
+}
+
+.guy--tall {
+  --w: 36px;
+  --h: 112px;
+  border-radius: 2px 4px 2px 3px;
+  --eye: 4px;
+}
+
+.guy--tall::before,
+.guy--tall::after {
+  top: 22%;
+}
+
+.guy--blob {
+  --w: 68px;
+  --h: 52px;
+  border-radius: 38% 52% 44% 58%;
+}
+
+.guy--square {
+  --w: 52px;
+  --h: 52px;
+  border-radius: 2px;
+}
+
+.guy--circle {
+  --w: 56px;
+  --h: 56px;
+  border-radius: 48% 52% 50% 48%;
+}
+
+.guy--tri {
+  --w: 58px;
+  --h: 52px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  filter: none;
+  animation: none;
+}
+
+.guy--tri .guy-body {
+  display: block;
+  width: 0;
+  height: 0;
+  border-left: 29px solid transparent;
+  border-right: 29px solid transparent;
+  border-bottom: 50px solid var(--guy);
+  filter:
+    drop-shadow(0 -2px 0 var(--iso-line))
+    drop-shadow(2px 0 0 var(--iso-line))
+    drop-shadow(-2px 0 0 var(--iso-line))
+    drop-shadow(0 2px 0 var(--iso-line));
+  position: relative;
+  animation: guy-drift 9s ease-in-out infinite;
+  animation-delay: var(--delay, 0s);
+}
+
+.guy--tri::before,
+.guy--tri::after {
+  top: 58%;
+  width: 4px;
+  height: 4px;
+  margin-top: 0;
+}
+
+.guy--capsule {
+  --w: 34px;
+  --h: 92px;
+  border-radius: 18px 14px 20px 16px;
+  --eye: 4px;
+}
+
+.guy--capsule::before,
+.guy--capsule::after {
+  top: 26%;
+}
+
+.guy--diamond {
+  --w: 48px;
+  --h: 48px;
+  border-radius: 2px;
+  transform: rotate(calc(var(--r, 0deg) + 45deg));
+}
+
+.guy--diamond::before,
+.guy--diamond::after {
+  transform: rotate(-45deg);
+}
+
+.guy--l {
+  --w: 70px;
+  --h: 48px;
+  border-radius: 2px 2px 2px 22px;
+}
+
+/* Restrained accent fills — not rainbow */
+.guy--green { --guy: #4a7a45; }
+.guy--red { --guy: #b83a3a; }
+.guy--teal { --guy: #2a7d7a; }
+.guy--blue { --guy: #2f4f9b; }
+.guy--yellow { --guy: #c4a35a; }
+.guy--pink { --guy: #a85a6e; }
+.guy--orange { --guy: #c46a3a; }
+.guy--violet { --guy: #5a5a8a; }
+.guy--mint { --guy: #5a8a78; }
+
+/* Symbolic props — slash, bar, square, ring (not cute hearts/stars) */
+.guy-acc {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%);
+  display: flex;
+  gap: 5px;
+  align-items: flex-end;
+  z-index: 2;
+}
+
+.guy-slash {
+  width: 14px;
+  height: 2.5px;
+  background: var(--iso-line);
+  transform: rotate(-38deg);
+  flex-shrink: 0;
+}
+
+.guy-bar {
+  width: 3px;
+  height: 16px;
+  background: var(--iso-red);
+  border: 1.5px solid var(--iso-line);
+  flex-shrink: 0;
+}
+
+.guy-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--iso-teal);
+  border: 1.5px solid var(--iso-line);
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+
+.guy-ring {
+  width: 14px;
+  height: 14px;
+  border: 2.5px solid var(--iso-line);
+  border-radius: 50%;
+  background: transparent;
+  flex-shrink: 0;
+}
+
+.guy-tick {
+  width: 10px;
+  height: 10px;
+  border-right: 2.5px solid var(--iso-line);
+  border-bottom: 2.5px solid var(--iso-line);
+  transform: rotate(45deg);
+  margin-bottom: 4px;
+  flex-shrink: 0;
+}
+
+/* Legacy accessory class aliases → map to symbols if old HTML remains */
+.guy-heart,
+.guy-star,
+.guy-bubble,
+.guy-spark {
+  width: 10px;
+  height: 10px;
+  background: transparent;
+  border: 2px solid var(--iso-line);
+  border-radius: 1px;
+  transform: none;
+  flex-shrink: 0;
+  position: relative;
+  filter: none;
+}
+
+.guy-heart::before,
+.guy-heart::after,
+.guy-star::after,
+.guy-bubble::after,
+.guy-spark--2 {
+  display: none !important;
+}
+
+.guy-heart--sm {
+  transform: scale(0.75);
+  margin-bottom: 0;
+}
+
+/* Position presets */
+.guy-p1  { --x: 4%;  --y: 12%; --r: -6deg; --delay: 0s; }
+.guy-p2  { --x: 82%; --y: 9%;  --r: 8deg;  --delay: 1.2s; }
+.guy-p3  { --x: 7%;  --y: 42%; --r: 4deg;  --delay: 2.1s; }
+.guy-p4  { --x: 86%; --y: 36%; --r: -10deg; --delay: 0.6s; }
+.guy-p5  { --x: 10%; --y: 72%; --r: -3deg; --delay: 3s; }
+.guy-p6  { --x: 76%; --y: 74%; --r: 6deg;  --delay: 1.8s; }
+.guy-p7  { --x: 44%; --y: 5%;  --r: -12deg; --delay: 2.6s; }
+.guy-p8  { --x: 58%; --y: 82%; --r: 3deg;  --delay: 0.9s; }
+.guy-p9  { --x: 2%;  --y: 56%; --r: 9deg;  --delay: 3.4s; }
+.guy-p10 { --x: 90%; --y: 58%; --r: -5deg; --delay: 1.5s; }
+.guy-p11 { --x: 30%; --y: 86%; --r: -8deg; --delay: 2.3s; }
+.guy-p12 { --x: 64%; --y: 16%; --r: 5deg;  --delay: 0.3s; }
+
+@media (max-width: 720px) {
+  .guy-p7,
+  .guy-p9,
+  .guy-p12,
+  .guy-hide-sm {
+    display: none;
+  }
+
+  .guy {
+    transform: rotate(var(--r, 0deg)) scale(0.88);
+  }
+}
+
+@media (max-width: 640px) {
+  :root {
+    --iso-cell: 52px;
+  }
+}
+
+/* Editorial frame — flat, sharp, thin charcoal border */
+.iso-frame {
+  position: relative;
+  z-index: 2;
+  max-width: 920px;
+  margin: 0 auto;
+  background: rgba(247, 245, 241, 0.88);
+  border: var(--iso-outline);
+  border-radius: var(--iso-radius);
+  box-shadow: none;
+  padding: clamp(1.5rem, 5vw, 2.75rem);
+  backdrop-filter: blur(1px);
+}
+
+.iso-brand {
+  margin: 0;
+  font-family: var(--iso-display);
+  font-weight: 700;
+  font-size: clamp(2.8rem, 11vw, 5rem);
+  letter-spacing: -0.04em;
+  line-height: 0.92;
+  color: var(--iso-ink);
+}
+
+.iso-title {
+  margin: 0.5rem 0 0.65rem;
+  font-family: var(--iso-display);
+  font-weight: 600;
+  font-size: clamp(1.15rem, 3.5vw, 1.55rem);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.iso-sub {
+  margin: 0 0 1.75rem;
+  color: var(--iso-muted);
+  max-width: 36ch;
+  line-height: 1.5;
+  font-size: 0.95rem;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+
+/* Graphic object buttons */
+.iso-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: var(--iso-outline);
+  border-radius: 2px;
+  padding: 0.8rem 1.25rem;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.92rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  color: var(--iso-ink);
+  background: var(--iso-panel);
+  box-shadow: none;
+  text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.12s ease;
+}
+
+.iso-btn:hover {
+  transform: translateY(-1px);
+  background: #fff;
+}
+
+.iso-btn:active {
+  transform: translateY(1px);
+}
+
+.iso-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.iso-btn--red {
+  background: var(--iso-red);
+  color: #f7f5f1;
+}
+
+.iso-btn--teal {
+  background: var(--iso-teal);
+  color: #f7f5f1;
+}
+
+.iso-btn--green {
+  background: var(--iso-green);
+  color: #f7f5f1;
+}
+
+.iso-btn--blue {
+  background: var(--iso-blue);
+  color: #f7f5f1;
+}
+
+.iso-btn--ghost {
+  background: transparent;
+}
+
+.iso-btn--lg {
+  width: 100%;
+  min-height: 52px;
+  padding: 1rem 1.4rem;
+  font-size: 0.95rem;
+}
+
+.iso-field {
+  display: grid;
+  gap: 0.4rem;
+  margin-bottom: 0.85rem;
+}
+
+.iso-field span {
+  font-weight: 600;
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--iso-muted);
+}
+
+.iso-field input,
+.iso-input {
+  width: 100%;
+  border: var(--iso-outline);
+  border-radius: 2px;
+  padding: 0.85rem 1rem;
+  font: inherit;
+  font-weight: 500;
+  background: #fff;
+  color: var(--iso-ink);
+  box-shadow: none;
+}
+
+.iso-field input:focus,
+.iso-input:focus {
+  outline: 2px solid var(--iso-blue);
+  outline-offset: 2px;
+}
+
+.iso-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: var(--iso-outline);
+  border-radius: 2px;
+  padding: 0.35rem 0.75rem;
+  background: #fff;
+  font-weight: 600;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  box-shadow: none;
+}
+
+.iso-panel {
+  background: var(--iso-panel);
+  border: var(--iso-outline);
+  border-radius: 2px;
+  padding: 1.1rem 1.2rem;
+  box-shadow: none;
+}
+
+.iso-badge {
+  display: inline-block;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  background: transparent;
+  color: var(--iso-muted);
+  margin-bottom: 0.65rem;
+}
+
+/* Quiet geometric motif (optional deco) */
+.iso-deco {
+  position: relative;
+  width: min(160px, 40vw);
+  margin: 1.5rem auto 0;
+}
+
+.iso-spinner {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: var(--iso-outline);
+  background: var(--iso-panel);
+  box-shadow: none;
+  position: relative;
+}
+
+.iso-spinner::before,
+.iso-spinner::after {
+  content: "";
+  position: absolute;
+  width: 14%;
+  height: 14%;
+  border-radius: 1px;
+  border: 2px solid var(--iso-line);
+}
+
+.iso-spinner::before {
+  top: 22%;
+  left: 22%;
+  background: var(--iso-teal);
+  box-shadow:
+    160% 0 0 var(--iso-blue),
+    0 160% 0 var(--iso-red),
+    160% 160% 0 var(--iso-green);
+}
+
+.iso-arrow {
+  position: absolute;
+  left: -36%;
+  top: 44%;
+  width: 40%;
+  height: 18%;
+  background: var(--iso-panel);
+  border: var(--iso-outline);
+  clip-path: polygon(0 25%, 65% 25%, 65% 0, 100% 50%, 65% 100%, 65% 75%, 0 75%);
+  box-shadow: none;
+  transform: rotate(-6deg);
+}

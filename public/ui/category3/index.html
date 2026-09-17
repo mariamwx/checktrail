@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Game mode 2 — Mirror Vote</title>
+  <title>Game mode 3 — Feud</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Syne:wght@500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/ui/shared/iso-theme.css" />
-  <link rel="stylesheet" href="/ui/category2/styles.css" />
+  <link rel="stylesheet" href="/ui/category3/styles.css" />
 </head>
 <body class="iso-world">
   <div class="iso-grid" aria-hidden="true"></div>
@@ -45,10 +45,10 @@
     <!-- HOME -->
     <section id="screen-home" class="screen active">
       <div class="stage">
-        <p class="category-badge">Game mode 2</p>
-        <p class="brand">Mirror Vote</p>
-        <h1 class="title">Who fits the question?</h1>
-        <p class="sub">Same question for everyone at once. Host picks Dirty or Philosophical. Pick anonymously.</p>
+        <p class="category-badge">Game mode 3</p>
+        <p class="brand">Feud</p>
+        <h1 class="title">Survey the room</h1>
+        <p class="sub">Multiple-choice prompts. Pick your answer, then see what the group chose. Majority wins.</p>
 
         <form id="home-form" class="form">
           <label class="field">
@@ -64,14 +64,14 @@
           </div>
         </form>
         <p id="home-error" class="error" hidden></p>
-        <p class="hint"><a href="/game.html">← Game mode 1: Icebreaker</a></p>
+        <p class="hint"><a href="/">← All game modes</a></p>
       </div>
     </section>
 
     <!-- LOBBY -->
     <section id="screen-lobby" class="screen">
       <header class="topbar">
-        <p class="brand-sm">Game mode 2</p>
+        <p class="brand-sm">Game mode 3 · Feud</p>
         <div class="room-chip">
           <span>Room</span>
           <strong id="lobby-code">————</strong>
@@ -81,7 +81,7 @@
       <div class="split">
         <div>
           <h2 class="section-title">Players</h2>
-          <p class="sub">When everyone’s in, the host starts. Everyone sees the same question at the same time.</p>
+          <p class="sub">When everyone’s in, the host starts. Answer at your own pace — votes stay anonymous.</p>
           <ul id="player-list" class="player-list"></ul>
         </div>
         <aside class="panel">
@@ -89,18 +89,18 @@
           <div id="deck-picker" class="deck-picker" hidden>
             <p class="aside-label">Question deck</p>
             <div class="deck-options" role="group" aria-label="Question deck">
-              <button type="button" class="deck-option" id="deck-philosophical" data-deck="philosophical">
-                <strong>Philosophical</strong>
-                <span>Ideas, politics, values</span>
+              <button type="button" class="deck-option" id="deck-classic" data-deck="classic">
+                <strong>Classic</strong>
+                <span>Straight survey prompts</span>
               </button>
-              <button type="button" class="deck-option" id="deck-dirty" data-deck="dirty">
-                <strong>Dirty</strong>
-                <span>Hookups, crushes, chaos</span>
+              <button type="button" class="deck-option" id="deck-funny" data-deck="funny">
+                <strong>Funny</strong>
+                <span>Same themes, playful wording</span>
               </button>
             </div>
           </div>
           <p class="deck-badge" id="deck-badge" hidden></p>
-          <button type="button" class="btn btn-primary btn-lg" id="btn-start" hidden>Start voting</button>
+          <button type="button" class="btn btn-primary btn-lg" id="btn-start" hidden>Start Feud</button>
           <p class="hint" id="lobby-hint">Need at least 2 players.</p>
         </aside>
       </div>
@@ -109,57 +109,37 @@
     <!-- PLAY -->
     <section id="screen-play" class="screen">
       <header class="topbar">
-        <p class="brand-sm">Game mode 2</p>
-        <div class="progress-chip" id="progress-chip">1 / 20</div>
+        <p class="brand-sm">Feud</p>
+        <div class="progress-chip" id="progress-chip">1 / 10</div>
       </header>
       <div class="play-stage">
-        <p class="eyebrow">Who is most likely…</p>
+        <p class="eyebrow" id="theme-chip">Theme</p>
         <h2 class="question" id="question-text">—</h2>
-        <p class="sub">Tap the player who fits best. Your vote stays anonymous.</p>
-        <div id="nominee-grid" class="nominee-grid"></div>
+        <p class="sub">Pick one answer. Your choice stays anonymous.</p>
+        <div id="choice-grid" class="choice-grid"></div>
       </div>
     </section>
 
     <!-- WAITING -->
     <section id="screen-wait" class="screen">
       <div class="stage center">
-        <p class="category-badge">Game mode 2</p>
-        <h2 class="section-title">Vote in</h2>
-        <p class="sub" id="wait-copy">Waiting for everyone else on this question…</p>
-        <p class="stat" id="wait-stat">0 / 0 votes in</p>
+        <p class="category-badge">Game mode 3</p>
+        <h2 class="section-title">You’re done</h2>
+        <p class="sub" id="wait-copy">Waiting for everyone else to finish…</p>
+        <p class="stat" id="wait-stat">0 / 0 finished</p>
       </div>
     </section>
 
     <!-- RESULTS -->
     <section id="screen-results" class="screen">
       <header class="topbar">
-        <p class="brand-sm">Game mode 2 · Results</p>
+        <p class="brand-sm">Feud · Results</p>
       </header>
       <div class="results-wrap">
-        <h2 class="section-title">Votes per question</h2>
-        <p class="sub">Each chart shows how many people named each player for that prompt.</p>
+        <div id="winner-board" class="winner-board"></div>
+        <h2 class="section-title">How the room answered</h2>
+        <p class="sub">Bars show how many people picked each option. Who chose what stays anonymous.</p>
         <div id="charts" class="charts"></div>
-
-        <h2 class="section-title body-title">How the room built you</h2>
-        <p class="sub">A portrait from the traits people assigned to you.</p>
-        <div class="body-layout">
-          <div class="body-figure" id="body-figure" aria-hidden="true">
-            <svg viewBox="0 0 200 360" class="body-svg">
-              <ellipse class="part" data-part="mind" cx="100" cy="42" rx="28" ry="32" />
-              <rect class="part" data-part="voice" x="88" y="74" width="24" height="18" rx="6" />
-              <rect class="part" data-part="spine" x="94" y="92" width="12" height="70" rx="4" />
-              <ellipse class="part" data-part="heart" cx="100" cy="130" rx="36" ry="42" />
-              <rect class="part" data-part="torso" x="70" y="115" width="60" height="90" rx="16" />
-              <rect class="part arm" data-part="hands" x="28" y="120" width="36" height="14" rx="7" />
-              <rect class="part arm" data-part="hands" x="136" y="120" width="36" height="14" rx="7" />
-              <circle class="part" data-part="fist" cx="40" cy="150" r="14" />
-              <circle class="part" data-part="fist" cx="160" cy="150" r="14" />
-              <rect class="part" data-part="legs" x="78" y="205" width="18" height="90" rx="8" />
-              <rect class="part" data-part="legs" x="104" y="205" width="18" height="90" rx="8" />
-            </svg>
-          </div>
-          <ul id="trait-list" class="trait-list"></ul>
-        </div>
       </div>
     </section>
 
@@ -168,6 +148,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="/logic/supabase-config.js"></script>
-  <script src="/logic/category2.js"></script>
+  <script src="/logic/category3.js"></script>
 </body>
 </html>

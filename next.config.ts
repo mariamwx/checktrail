@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
     return [
       { source: "/game.html", destination: "/ui/category1/index.html" },
       { source: "/category2.html", destination: "/ui/category2/index.html" },
+      { source: "/category3.html", destination: "/ui/category3/index.html" },
     ];
   },
 };

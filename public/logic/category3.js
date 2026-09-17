@@ -1,10 +1,9 @@
-/* Category 2 — Mirror Vote
-   UI (placeholder): /public/ui/category2/  — replace markup/CSS/assets there.
-   This file is logic only; keep element ids listed in /public/ui/CONTRACT.md.
-   Schema: category_two
-   Everyone sees the same question at the same time (shared deck order).
-   Advance to the next question only after every player has voted.
-   Votes are anonymous. Results = bar charts + personal trait body.
+/* Category 3 — Feud
+   UI: /public/ui/category3/
+   Schema: category_three
+   Multiple-choice answers from Classic / Funny decks.
+   Players answer at their own pace. Tallies are anonymous.
+   Winner = most majority answers across the round.
 */
 
 (() => {
@@ -13,9 +12,16 @@
   const SUPABASE_URL = window.SUPABASE_CONFIG?.url || "";
   const SUPABASE_KEY = window.SUPABASE_CONFIG?.publishableKey || "";
   const supabase = window.supabase?.createClient(SUPABASE_URL, SUPABASE_KEY, {
-    db: { schema: "category_two" },
+    db: { schema: "category_three" },
   });
-  const db = () => supabase.schema("category_two");
+  const db = () => supabase.schema("category_three");
+
+  const QUESTIONS_PER_PLAYER = 5;
+
+  function roundSize(playerCount = players.length) {
+    const n = Math.max(2, Number(playerCount) || 2);
+    return n * QUESTIONS_PER_PLAYER;
+  }
 
   const $ = (s, r = document) => r.querySelector(s);
 
@@ -41,32 +47,51 @@
     btnStart: $("#btn-start"),
     lobbyHint: $("#lobby-hint"),
     deckPicker: $("#deck-picker"),
-    deckPhilosophical: $("#deck-philosophical"),
-    deckDirty: $("#deck-dirty"),
+    deckClassic: $("#deck-classic"),
+    deckFunny: $("#deck-funny"),
     deckBadge: $("#deck-badge"),
     progressChip: $("#progress-chip"),
+    themeChip: $("#theme-chip"),
     questionText: $("#question-text"),
-    nomineeGrid: $("#nominee-grid"),
+    choiceGrid: $("#choice-grid"),
     waitCopy: $("#wait-copy"),
     waitStat: $("#wait-stat"),
     charts: $("#charts"),
-    traitList: $("#trait-list"),
-    bodyFigure: $("#body-figure"),
+    winnerBoard: $("#winner-board"),
     toast: $("#toast"),
   };
 
   let me = { id: null, name: "", isHost: false };
   let roomCode = null;
+  let channel = null;
+  let players = [];
+  let bank = [];
+  let playQuestions = [];
+  let questionIds = [];
+  let roomDeckVersion = "classic";
+  let myIndex = 0;
+  let myVotes = {};
+  let phase = "home";
+  let toastTimer = null;
+  let votingLock = false;
+  let waitPollTimer = null;
 
   function sessionKey(code) {
-    return `c2-session-${String(code || "").toUpperCase()}`;
+    return `c3-session-${String(code || "").toUpperCase()}`;
   }
   function saveSession() {
     if (!roomCode || !me?.id) return;
     try {
       localStorage.setItem(
         sessionKey(roomCode),
-        JSON.stringify({ id: me.id, name: me.name, isHost: me.isHost, roomCode })
+        JSON.stringify({
+          id: me.id,
+          name: me.name,
+          isHost: me.isHost,
+          roomCode,
+          myVotes,
+          myIndex,
+        })
       );
     } catch (_) {}
   }
@@ -83,17 +108,6 @@
       localStorage.removeItem(sessionKey(code));
     } catch (_) {}
   }
-  let channel = null;
-  let players = [];
-  let questions = [];
-  let roomDeckVersion = "philosophical";
-  let myOrder = [];
-  let myIndex = 0;
-  let myVotes = {}; // questionId -> nomineeId
-  let phase = "home";
-  let toastTimer = null;
-  let votingLock = false;
-  let waitPollTimer = null;
 
   function uid() {
     return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
@@ -141,124 +155,51 @@
     return url.toString();
   }
 
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function deckLabel(version = roomDeckVersion) {
+    return version === "funny" ? "Funny" : "Classic";
+  }
+
   async function loadQuestionBank(version = roomDeckVersion) {
-    const deck = version === "dirty" ? "dirty" : "philosophical";
+    const deck = version === "funny" ? "funny" : "classic";
     const { data, error } = await db()
       .from("question_bank")
       .select("*")
       .eq("version", deck)
       .order("sort_order", { ascending: true });
     if (error) throw new Error(error.message);
-    questions = data || [];
+    bank = data || [];
     roomDeckVersion = deck;
-    if (!questions.length) {
-      throw new Error(`No ${deck} questions found in Supabase.`);
-    }
-  }
-
-  function deckLabel(version = roomDeckVersion) {
-    return version === "dirty" ? "Dirty" : "Philosophical";
-  }
-
-  function sharedQuestionOrder() {
-    return [...questions]
-      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-      .map((q) => q.id);
-  }
-
-  async function writeSharedOrderToPlayers() {
-    const order = sharedQuestionOrder();
-    myOrder = order;
-    await Promise.all(
-      players.map((p) =>
-        db()
-          .from("players")
-          .update({ question_order: order })
-          .eq("id", p.id)
-      )
-    );
-  }
-
-  function currentRoundFromVotes(votes) {
-    const order = sharedQuestionOrder();
-    const playerIds = players.map((p) => p.id);
-    for (let i = 0; i < order.length; i++) {
-      const qid = order[i];
-      const voters = new Set(
-        (votes || [])
-          .filter((v) => v.question_id === qid)
-          .map((v) => v.voter_id)
+    if (!bank.length) {
+      throw new Error(
+        `No ${deck} Feud questions found. Expose schema category_three in Supabase API settings and seed the bank.`
       );
-      if (!playerIds.every((id) => voters.has(id))) {
-        return { qid, index: i, voters, done: false };
-      }
     }
-    return { qid: null, index: order.length, voters: new Set(), done: true };
   }
 
-  async function fetchRoomVotes() {
-    const { data, error } = await db()
-      .from("votes")
-      .select("question_id, voter_id, nominee_id")
-      .eq("room_id", roomCode);
-    if (error) throw new Error(error.message);
-    return data || [];
+  function setPlayQuestionsFromIds(ids) {
+    questionIds = Array.isArray(ids) ? ids.map(String) : [];
+    const byId = Object.fromEntries(bank.map((q) => [q.id, q]));
+    playQuestions = questionIds.map((id) => byId[id]).filter(Boolean);
   }
 
-  async function syncSharedRound() {
-    if (!roomCode || !questions.length || !players.length) return;
-    const votes = await fetchRoomVotes();
-    myVotes = {};
-    votes.forEach((v) => {
-      if (v.voter_id === me.id) myVotes[v.question_id] = v.nominee_id;
-    });
-
-    myOrder = sharedQuestionOrder();
-    const round = currentRoundFromVotes(votes);
-
-    if (round.done) {
-      stopWaitPoll();
-      els.waitCopy.textContent = "Everyone finished — opening results…";
-      els.waitStat.textContent = `${votes.length} / ${players.length * questions.length} votes in`;
-      if (me.isHost) {
-        await db()
-          .from("rooms")
-          .update({ phase: "results", updated_at: new Date().toISOString() })
-          .eq("code", roomCode);
-      }
-      phase = "results";
-      await showResults();
-      return;
-    }
-
-    myIndex = round.index;
-    const votedCount = players.filter((p) => round.voters.has(p.id)).length;
-    const waitingOn = players.filter((p) => !round.voters.has(p.id));
-
-    if (round.voters.has(me.id) || myVotes[round.qid]) {
-      phase = "wait";
-      const title = document.querySelector("#screen-wait .section-title");
-      if (title) title.textContent = "Vote in";
-      els.waitCopy.textContent = waitingOn.length
-        ? `Waiting for ${waitingOn.map((p) => p.name).join(", ")} on this question…`
-        : "Moving to the next question…";
-      els.waitStat.textContent = `${votedCount} / ${players.length} voted · Q${round.index + 1} of ${questions.length}`;
-      show("wait");
-      startWaitPoll();
-      return;
-    }
-
-    stopWaitPoll();
-    phase = "playing";
-    votingLock = false;
-    renderQuestion();
-    show("play");
+  function pickRoundIds() {
+    const pool = shuffle(bank.map((q) => q.id));
+    const want = roundSize(players.length);
+    return pool.slice(0, Math.min(want, pool.length));
   }
 
   async function setDeckVersion(version) {
     if (!me.isHost || phase !== "lobby" || !roomCode) return;
-    const deck = version === "dirty" ? "dirty" : "philosophical";
-    if (deck === roomDeckVersion && questions.length) {
+    const deck = version === "funny" ? "funny" : "classic";
+    if (deck === roomDeckVersion && bank.length) {
       renderLobby();
       return;
     }
@@ -267,14 +208,11 @@
       .from("rooms")
       .update({
         deck_version: deck,
-        question_count: questions.length,
+        question_count: roundSize(players.length),
         updated_at: new Date().toISOString(),
       })
       .eq("code", roomCode);
     if (error) throw new Error(error.message);
-    await refreshPlayers({ silent: true });
-    await writeSharedOrderToPlayers();
-    await refreshPlayers({ silent: true });
     renderLobby();
     toast(`${deckLabel(deck)} deck selected`);
   }
@@ -287,10 +225,9 @@
       .order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
     players = data || [];
-    myOrder = sharedQuestionOrder();
     renderLobby();
     if (!opts.silent && (phase === "playing" || phase === "wait")) {
-      await syncSharedRound().catch(console.error);
+      await syncProgress().catch(console.error);
     }
   }
 
@@ -303,24 +240,24 @@
     if (error) throw new Error(error.message);
     if (!data) return;
 
-    const nextDeck =
-      data.deck_version === "dirty" ? "dirty" : "philosophical";
+    const nextDeck = data.deck_version === "funny" ? "funny" : "classic";
     if (data.phase === "lobby" && nextDeck !== roomDeckVersion) {
       await loadQuestionBank(nextDeck);
-      await refreshPlayers({ silent: true });
-      myOrder = sharedQuestionOrder();
       renderLobby();
     }
 
     if (data.phase === "playing" && phase === "lobby") {
       if (nextDeck !== roomDeckVersion) await loadQuestionBank(nextDeck);
+      setPlayQuestionsFromIds(data.question_ids || []);
       phase = "playing";
       await beginPlaying();
     } else if (data.phase === "playing" && (phase === "playing" || phase === "wait")) {
       if (nextDeck !== roomDeckVersion) await loadQuestionBank(nextDeck);
-      await syncSharedRound().catch(console.error);
+      setPlayQuestionsFromIds(data.question_ids || []);
+      await syncProgress().catch(console.error);
     } else if (data.phase === "results") {
       if (nextDeck !== roomDeckVersion) await loadQuestionBank(nextDeck);
+      setPlayQuestionsFromIds(data.question_ids || []);
       phase = "results";
       await showResults();
     }
@@ -329,21 +266,21 @@
   async function subscribe() {
     if (channel) supabase.removeChannel(channel);
     channel = supabase
-      .channel(`c2:${roomCode}`)
+      .channel(`c3:${roomCode}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "category_two", table: "players", filter: `room_id=eq.${roomCode}` },
+        { event: "*", schema: "category_three", table: "players", filter: `room_id=eq.${roomCode}` },
         () => refreshPlayers().catch(console.error)
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "category_two", table: "rooms", filter: `code=eq.${roomCode}` },
+        { event: "*", schema: "category_three", table: "rooms", filter: `code=eq.${roomCode}` },
         () => refreshRoom().catch(console.error)
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "category_two", table: "votes", filter: `room_id=eq.${roomCode}` },
-        () => syncSharedRound().catch(console.error)
+        { event: "*", schema: "category_three", table: "votes", filter: `room_id=eq.${roomCode}` },
+        () => syncProgress().catch(console.error)
       )
       .subscribe();
   }
@@ -353,36 +290,30 @@
     els.playerList.innerHTML = "";
     players.forEach((p) => {
       const li = document.createElement("li");
-      li.innerHTML = `<span>${escapeHtml(p.name)}</span><span>${p.id === me.id ? "you" : p.is_host ? "host" : "joined"}</span>`;
+      li.innerHTML = `<span>${escapeHtml(p.name)}</span><span>${
+        p.id === me.id ? "you" : p.is_host ? "host" : "joined"
+      }</span>`;
       els.playerList.appendChild(li);
     });
     const ready = players.length >= 2;
-    els.lobbyStatus.textContent = `${players.length} player${players.length === 1 ? "" : "s"} · ${deckLabel()} deck`;
+    els.lobbyStatus.textContent = `${players.length} player${
+      players.length === 1 ? "" : "s"
+    } · ${deckLabel()} deck · ${roundSize(players.length)} Qs`;
     els.lobbyHint.textContent = ready
       ? me.isHost
-        ? "Pick a deck, then start — everyone answers the same question together."
+        ? `Pick a deck, then start (${QUESTIONS_PER_PLAYER} questions per player).`
         : "Waiting for the host to start."
       : "Need at least 2 players.";
+    els.btnStart.hidden = !me.isHost;
+    els.btnStart.disabled = !ready;
 
-    // Host-only: deck picker + start. Invite joiners never see these.
-    if (els.btnStart) {
-      els.btnStart.hidden = !me.isHost;
-      els.btnStart.disabled = !me.isHost || !ready;
-      els.btnStart.style.display = me.isHost ? "" : "none";
-    }
     if (els.deckPicker) {
       els.deckPicker.hidden = !me.isHost;
-      els.deckPicker.style.display = me.isHost ? "" : "none";
-      els.deckPhilosophical?.classList.toggle(
-        "is-selected",
-        roomDeckVersion === "philosophical"
-      );
-      els.deckDirty?.classList.toggle("is-selected", roomDeckVersion === "dirty");
+      els.deckClassic?.classList.toggle("is-selected", roomDeckVersion === "classic");
+      els.deckFunny?.classList.toggle("is-selected", roomDeckVersion === "funny");
     }
     if (els.deckBadge) {
-      // Joiners only see which deck the host chose — not the picker.
       els.deckBadge.hidden = !!me.isHost;
-      els.deckBadge.style.display = me.isHost ? "none" : "";
       els.deckBadge.innerHTML = me.isHost
         ? ""
         : `Deck: <strong>${escapeHtml(deckLabel())}</strong>`;
@@ -390,18 +321,18 @@
   }
 
   async function createRoom(name) {
-    await loadQuestionBank("philosophical");
+    await loadQuestionBank("classic");
     const code = makeRoomCode();
     me = { id: uid(), name, isHost: true };
     roomCode = code;
-    const order = sharedQuestionOrder();
 
     const { error: roomErr } = await db().from("rooms").insert({
       code,
       host_id: me.id,
       phase: "lobby",
-      question_count: questions.length,
-      deck_version: "philosophical",
+      question_count: roundSize(1),
+      deck_version: "classic",
+      question_ids: [],
     });
     if (roomErr) throw new Error(roomErr.message);
 
@@ -410,11 +341,9 @@
       room_id: code,
       name,
       is_host: true,
-      question_order: order,
     });
     if (playerErr) throw new Error(playerErr.message);
 
-    myOrder = order;
     history.replaceState(null, "", inviteUrl(code));
     await subscribe();
     await refreshPlayers();
@@ -439,35 +368,28 @@
     if (!room) throw new Error("Room not found.");
     if (room.phase !== "lobby") throw new Error("This room already started.");
 
-    await loadQuestionBank(
-      room.deck_version === "dirty" ? "dirty" : "philosophical"
-    );
+    await loadQuestionBank(room.deck_version === "funny" ? "funny" : "classic");
 
     const { data: existing, error: existingErr } = await db()
       .from("players")
       .select("id, name")
       .eq("room_id", code);
     if (existingErr) throw new Error(existingErr.message);
-    if (
-      (existing || []).some((p) => p.name.toLowerCase() === cleanName.toLowerCase())
-    ) {
+    if ((existing || []).some((p) => p.name.toLowerCase() === cleanName.toLowerCase())) {
       throw new Error("That name is already taken in this room. Pick another.");
     }
 
     me = { id: uid(), name: cleanName, isHost: false };
     roomCode = code;
-    const order = sharedQuestionOrder();
 
     const { error: playerErr } = await db().from("players").insert({
       id: me.id,
       room_id: code,
       name: cleanName,
       is_host: false,
-      question_order: order,
     });
     if (playerErr) throw new Error(playerErr.message);
 
-    myOrder = order;
     history.replaceState(null, "", inviteUrl(code));
     await subscribe();
     await refreshPlayers();
@@ -490,9 +412,8 @@
       return false;
     }
 
-    await loadQuestionBank(
-      room.deck_version === "dirty" ? "dirty" : "philosophical"
-    );
+    await loadQuestionBank(room.deck_version === "funny" ? "funny" : "classic");
+    setPlayQuestionsFromIds(room.question_ids || []);
 
     const { data: player } = await db()
       .from("players")
@@ -505,9 +426,14 @@
       return false;
     }
 
-    me = { id: player.id, name: player.name, isHost: !!player.is_host };
+    me = {
+      id: player.id,
+      name: player.name,
+      isHost: !!player.is_host || !!session.isHost,
+    };
     roomCode = code;
-    myOrder = sharedQuestionOrder();
+    myVotes = session.myVotes && typeof session.myVotes === "object" ? session.myVotes : {};
+    myIndex = Number.isFinite(session.myIndex) ? session.myIndex : 0;
     history.replaceState(null, "", inviteUrl(code));
     await subscribe();
     await refreshPlayers({ silent: true });
@@ -534,58 +460,162 @@
     if (!me.isHost) return;
     await loadQuestionBank(roomDeckVersion);
     await refreshPlayers({ silent: true });
-    await writeSharedOrderToPlayers();
+    const ids = pickRoundIds();
+    if (!ids.length) throw new Error("No questions available for this deck.");
+
     const { error } = await db()
       .from("rooms")
       .update({
         phase: "playing",
         deck_version: roomDeckVersion,
-        question_count: questions.length,
+        question_count: ids.length,
+        question_ids: ids,
         updated_at: new Date().toISOString(),
       })
       .eq("code", roomCode);
     if (error) throw new Error(error.message);
+
+    setPlayQuestionsFromIds(ids);
+    myVotes = {};
+    myIndex = 0;
     phase = "playing";
     await beginPlaying();
   }
 
   async function beginPlaying() {
     stopWaitPoll();
-    myOrder = sharedQuestionOrder();
-    await syncSharedRound();
+    if (!playQuestions.length) {
+      const { data: room } = await db()
+        .from("rooms")
+        .select("question_ids")
+        .eq("code", roomCode)
+        .maybeSingle();
+      setPlayQuestionsFromIds(room?.question_ids || []);
+    }
+    await hydrateMyVotes();
+    await syncProgress();
   }
 
-  function questionById(id) {
-    return questions.find((q) => q.id === id);
+  async function hydrateMyVotes() {
+    const { data, error } = await db()
+      .from("votes")
+      .select("question_id, choice_index")
+      .eq("room_id", roomCode)
+      .eq("voter_id", me.id);
+    if (error) throw new Error(error.message);
+    myVotes = {};
+    (data || []).forEach((v) => {
+      myVotes[v.question_id] = v.choice_index;
+    });
+    myIndex = 0;
+    while (myIndex < questionIds.length && myVotes[questionIds[myIndex]] != null) {
+      myIndex += 1;
+    }
+    saveSession();
+  }
+
+  async function fetchRoomVotes() {
+    const { data, error } = await db()
+      .from("votes")
+      .select("question_id, voter_id, choice_index")
+      .eq("room_id", roomCode);
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  function finishedCount(votes) {
+    const needed = questionIds.length;
+    if (!needed) return 0;
+    const byVoter = {};
+    votes.forEach((v) => {
+      if (!questionIds.includes(v.question_id)) return;
+      byVoter[v.voter_id] = (byVoter[v.voter_id] || 0) + 1;
+    });
+    return players.filter((p) => (byVoter[p.id] || 0) >= needed).length;
+  }
+
+  async function syncProgress() {
+    if (!roomCode || !questionIds.length || !players.length) return;
+    const votes = await fetchRoomVotes();
+    myVotes = {};
+    votes.forEach((v) => {
+      if (v.voter_id === me.id) myVotes[v.question_id] = v.choice_index;
+    });
+
+    const done = finishedCount(votes) >= players.length;
+    if (done) {
+      stopWaitPoll();
+      els.waitCopy.textContent = "Everyone finished — opening results…";
+      els.waitStat.textContent = `${players.length} / ${players.length} finished`;
+      if (me.isHost) {
+        await db()
+          .from("rooms")
+          .update({ phase: "results", updated_at: new Date().toISOString() })
+          .eq("code", roomCode);
+      }
+      phase = "results";
+      await showResults();
+      return;
+    }
+
+    while (myIndex < questionIds.length && myVotes[questionIds[myIndex]] != null) {
+      myIndex += 1;
+    }
+
+    if (myIndex >= questionIds.length) {
+      phase = "wait";
+      const waitingOn = players.filter((p) => {
+        const n = votes.filter(
+          (v) => v.voter_id === p.id && questionIds.includes(v.question_id)
+        ).length;
+        return n < questionIds.length;
+      });
+      els.waitCopy.textContent = waitingOn.length
+        ? `Waiting for ${waitingOn.map((p) => p.name).join(", ")}…`
+        : "Almost there…";
+      els.waitStat.textContent = `${finishedCount(votes)} / ${players.length} finished`;
+      show("wait");
+      startWaitPoll();
+      return;
+    }
+
+    stopWaitPoll();
+    phase = "playing";
+    votingLock = false;
+    renderQuestion();
+    show("play");
   }
 
   function renderQuestion() {
-    const qid = myOrder[myIndex] || sharedQuestionOrder()[myIndex];
-    const q = questionById(qid);
+    const q = playQuestions[myIndex];
     if (!q) {
-      syncSharedRound().catch(console.error);
+      syncProgress().catch(console.error);
       return;
     }
-    els.progressChip.textContent = `${myIndex + 1} / ${questions.length}`;
+    els.progressChip.textContent = `${myIndex + 1} / ${playQuestions.length}`;
+    if (els.themeChip) els.themeChip.textContent = q.theme || "Feud";
     els.questionText.textContent = q.prompt;
-    els.nomineeGrid.innerHTML = "";
+    els.choiceGrid.innerHTML = "";
     votingLock = false;
-    players.forEach((p) => {
+    const answers = Array.isArray(q.answers) ? q.answers : [];
+    answers.forEach((label, idx) => {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "nominee";
-      btn.textContent = p.name;
-      btn.onclick = () => castVote(qid, p.id, btn);
-      els.nomineeGrid.appendChild(btn);
+      btn.className = "choice";
+      btn.innerHTML = `<span class="choice-letter">${String.fromCharCode(65 + idx)}</span><span class="choice-text">${escapeHtml(
+        label
+      )}</span>`;
+      btn.onclick = () => castVote(q.id, idx, btn);
+      els.choiceGrid.appendChild(btn);
     });
   }
 
-  async function castVote(questionId, nomineeId, btn) {
+  async function castVote(questionId, choiceIndex, btn) {
     if (votingLock) return;
-    if (myVotes[questionId]) return;
+    if (myVotes[questionId] != null) return;
     votingLock = true;
 
-    [...els.nomineeGrid.querySelectorAll(".nominee")].forEach((b) => {
+    [...els.choiceGrid.querySelectorAll(".choice")].forEach((b) => {
       b.disabled = true;
       b.classList.remove("selected");
     });
@@ -596,23 +626,24 @@
         room_id: roomCode,
         question_id: questionId,
         voter_id: me.id,
-        nominee_id: nomineeId,
+        choice_index: choiceIndex,
       },
       { onConflict: "room_id,question_id,voter_id" }
     );
     if (error) {
       toast(error.message || "Vote failed — try again");
       votingLock = false;
-      [...els.nomineeGrid.querySelectorAll(".nominee")].forEach((b) => {
+      [...els.choiceGrid.querySelectorAll(".choice")].forEach((b) => {
         b.disabled = false;
         b.classList.remove("selected");
       });
       return;
     }
 
-    myVotes[questionId] = nomineeId;
+    myVotes[questionId] = choiceIndex;
+    myIndex += 1;
     saveSession();
-    await syncSharedRound();
+    await syncProgress();
   }
 
   function stopWaitPoll() {
@@ -625,55 +656,124 @@
   function startWaitPoll() {
     stopWaitPoll();
     waitPollTimer = setInterval(() => {
-      syncSharedRound().catch(console.error);
+      syncProgress().catch(console.error);
     }, 1500);
   }
 
+  function majorityIndexes(counts) {
+    const max = Math.max(...counts, 0);
+    if (max <= 0) return [];
+    return counts.map((c, i) => (c === max ? i : -1)).filter((i) => i >= 0);
+  }
+
+  function scorePlayers(votes) {
+    const scores = Object.fromEntries(players.map((p) => [p.id, 0]));
+    playQuestions.forEach((q) => {
+      const counts = [0, 0, 0, 0];
+      const qVotes = votes.filter((v) => v.question_id === q.id);
+      qVotes.forEach((v) => {
+        if (v.choice_index >= 0 && v.choice_index <= 3) counts[v.choice_index] += 1;
+      });
+      const winners = majorityIndexes(counts);
+      if (!winners.length) return;
+      qVotes.forEach((v) => {
+        if (winners.includes(v.choice_index) && scores[v.voter_id] != null) {
+          scores[v.voter_id] += 1;
+        }
+      });
+    });
+    return scores;
+  }
+
   async function showResults() {
+    stopWaitPoll();
     show("results");
-    const { data: votes, error } = await db()
-      .from("votes")
-      .select("question_id, nominee_id")
-      .eq("room_id", roomCode);
-    if (error) {
-      toast(error.message);
-      return;
+    const votes = await fetchRoomVotes();
+
+    const scores = scorePlayers(votes);
+    const ranked = [...players]
+      .map((p) => ({ ...p, score: scores[p.id] || 0 }))
+      .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+    const top = ranked[0]?.score ?? 0;
+    const winners = ranked.filter((p) => p.score === top && top > 0);
+
+    if (els.winnerBoard) {
+      els.winnerBoard.innerHTML = "";
+      const title = document.createElement("h2");
+      title.className = "section-title";
+      if (!winners.length) {
+        title.textContent = "No clear majority champ yet";
+      } else if (winners.length === 1) {
+        title.textContent = `${winners[0].name} wins`;
+      } else {
+        title.textContent = `Tie: ${winners.map((w) => w.name).join(" & ")}`;
+      }
+      els.winnerBoard.appendChild(title);
+
+      const sub = document.createElement("p");
+      sub.className = "sub";
+      sub.textContent = "Score = how many times you matched the room’s top answer.";
+      els.winnerBoard.appendChild(sub);
+
+      const list = document.createElement("ul");
+      list.className = "score-list";
+      ranked.forEach((p, i) => {
+        const li = document.createElement("li");
+        li.className = winners.some((w) => w.id === p.id) ? "is-winner" : "";
+        li.innerHTML = `<span class="score-rank">${i + 1}</span><span class="score-name">${escapeHtml(
+          p.name
+        )}${p.id === me.id ? " (you)" : ""}</span><span class="score-pts">${p.score} / ${
+          playQuestions.length
+        }</span>`;
+        list.appendChild(li);
+      });
+      els.winnerBoard.appendChild(list);
     }
 
     els.charts.innerHTML = "";
-    const orderedQuestions = [...questions].sort((a, b) => a.sort_order - b.sort_order);
-
-    orderedQuestions.forEach((q) => {
-      const tallies = {};
-      players.forEach((p) => {
-        tallies[p.id] = 0;
-      });
-      (votes || [])
+    playQuestions.forEach((q) => {
+      const counts = [0, 0, 0, 0];
+      votes
         .filter((v) => v.question_id === q.id)
         .forEach((v) => {
-          if (tallies[v.nominee_id] != null) tallies[v.nominee_id] += 1;
+          if (v.choice_index >= 0 && v.choice_index <= 3) counts[v.choice_index] += 1;
         });
+      const winnersIdx = majorityIndexes(counts);
+      const answers = Array.isArray(q.answers) ? q.answers : [];
 
       const card = document.createElement("article");
       card.className = "chart-card";
-      card.innerHTML = `<h3>${escapeHtml(q.prompt)}</h3><div class="chart-canvas-wrap"></div>`;
+      card.innerHTML = `<p class="chart-theme">${escapeHtml(q.theme || "")}</p><h3>${escapeHtml(
+        q.prompt
+      )}</h3><div class="chart-canvas-wrap"></div><ul class="tally-list"></ul>`;
+      const tally = card.querySelector(".tally-list");
+      answers.forEach((label, idx) => {
+        const li = document.createElement("li");
+        if (winnersIdx.includes(idx)) li.classList.add("is-majority");
+        li.innerHTML = `<span class="tally-letter">${String.fromCharCode(65 + idx)}</span><span class="tally-label">${escapeHtml(
+          label
+        )}</span><span class="tally-count">${counts[idx]}</span>`;
+        tally.appendChild(li);
+      });
       const wrap = card.querySelector(".chart-canvas-wrap");
       const canvas = document.createElement("canvas");
       wrap.appendChild(canvas);
       els.charts.appendChild(card);
       drawBarChart(
         canvas,
-        players.map((p) => ({ name: p.name, value: tallies[p.id] || 0 }))
+        answers.map((label, idx) => ({
+          name: String.fromCharCode(65 + idx),
+          value: counts[idx],
+          highlight: winnersIdx.includes(idx),
+        }))
       );
     });
-
-    renderBodyPortrait(votes || []);
   }
 
   function drawBarChart(canvas, series) {
     const dpr = window.devicePixelRatio || 1;
     const cssW = Math.min(640, canvas.parentElement.clientWidth || 640);
-    const cssH = 260;
+    const cssH = 220;
     canvas.width = cssW * dpr;
     canvas.height = cssH * dpr;
     canvas.style.width = `${cssW}px`;
@@ -692,15 +792,14 @@
     const yMax = Math.max(8, Math.ceil(maxVal / 2) * 2);
     const step = yMax <= 8 ? 2 : Math.ceil(yMax / 4);
 
-    // Editorial panel — cream field, ink grid (matches iso-theme)
     ctx.fillStyle = "#f7f5f1";
     ctx.fillRect(0, 0, cssW, cssH);
 
-    ctx.strokeStyle = "rgba(42, 40, 38, 0.18)";
-    ctx.setLineDash([3, 6]);
+    ctx.strokeStyle = "#d8d2c8";
+    ctx.setLineDash([4, 5]);
     ctx.lineWidth = 1;
     ctx.fillStyle = "#6e6a64";
-    ctx.font = "600 12px DM Sans, system-ui, sans-serif";
+    ctx.font = "12px DM Sans, sans-serif";
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
     for (let y = 0; y <= yMax; y += step) {
@@ -713,44 +812,25 @@
     }
     ctx.setLineDash([]);
 
-    // Baseline
-    ctx.strokeStyle = "#2a2826";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(padL, padT + plotH);
-    ctx.lineTo(cssW - padR, padT + plotH);
-    ctx.stroke();
-
     const n = Math.max(series.length, 1);
     const gap = 18;
     const barW = Math.min(70, (plotW - gap * (n + 1)) / n);
-    const maxInSeries = Math.max(...series.map((s) => s.value), 0);
 
     series.forEach((s, i) => {
-      const x =
-        padL +
-        gap +
-        i * (barW + gap) +
-        (plotW - gap * (n + 1) - barW * n) / 2;
-      const h = Math.max(0, (s.value / yMax) * plotH);
+      const x = padL + gap + i * (barW + gap) + (plotW - gap * (n + 1) - barW * n) / 2;
+      const h = (s.value / yMax) * plotH;
       const y = padT + plotH - h;
-      const r = 2;
+      const r = 10;
 
-      if (h > 0) {
-        ctx.fillStyle = s.value === maxInSeries && maxInSeries > 0 ? "#2f4f9b" : "#9aa3ad";
-        roundTopRect(ctx, x, y, barW, h, r);
-        ctx.fill();
-        ctx.strokeStyle = "#2a2826";
-        ctx.lineWidth = 2;
-        roundTopRect(ctx, x, y, barW, h, r);
-        ctx.stroke();
-      }
+      ctx.fillStyle = s.highlight ? "#2f4f9b" : "#9aa3ad";
+      roundTopRect(ctx, x, y, barW, h, r);
+      ctx.fill();
 
       ctx.fillStyle = "#1c1b19";
-      ctx.font = "700 13px Syne, system-ui, sans-serif";
+      ctx.font = "13px Syne, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
-      ctx.fillText(s.name.slice(0, 12), x + barW / 2, padT + plotH + 10);
+      ctx.fillText(s.name, x + barW / 2, padT + plotH + 10);
     });
   }
 
@@ -766,80 +846,6 @@
     ctx.closePath();
   }
 
-  function renderBodyPortrait(votes) {
-    const totalVoters = players.length || 1;
-    // For each trait, % of players who nominated ME on questions with that trait
-    const traitMap = {};
-    questions.forEach((q) => {
-      if (!traitMap[q.trait_key]) {
-        traitMap[q.trait_key] = {
-          key: q.trait_key,
-          label: q.trait_label,
-          bodyPart: q.body_part,
-          hits: 0,
-          possible: 0,
-        };
-      }
-      traitMap[q.trait_key].possible += totalVoters;
-      votes
-        .filter((v) => v.question_id === q.id && v.nominee_id === me.id)
-        .forEach(() => {
-          traitMap[q.trait_key].hits += 1;
-        });
-    });
-
-    const traits = Object.values(traitMap)
-      .map((t) => ({
-        ...t,
-        pct: t.possible ? Math.round((t.hits / t.possible) * 100) : 0,
-      }))
-      .sort((a, b) => b.pct - a.pct);
-
-    els.traitList.innerHTML = "";
-    traits.forEach((t) => {
-      const li = document.createElement("li");
-      li.className = t.pct === 0 ? "trait-chip dim" : "trait-chip";
-      li.innerHTML = `
-        <span class="trait-pct">${t.pct}%</span>
-        <span class="trait-copy">think you're <em>${escapeHtml(t.label)}</em></span>
-        <span class="trait-bar" aria-hidden="true"><span style="width:${t.pct}%"></span></span>
-      `;
-      els.traitList.appendChild(li);
-    });
-
-    // Light body parts by average trait % for that part
-    const partScores = {};
-    traits.forEach((t) => {
-      if (!partScores[t.bodyPart]) partScores[t.bodyPart] = [];
-      partScores[t.bodyPart].push(t.pct);
-    });
-
-    els.bodyFigure.querySelectorAll(".part").forEach((el) => {
-      const part = el.getAttribute("data-part");
-      const scores = partScores[part] || [0];
-      const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
-      el.style.fill = tintForPercent(avg);
-    });
-  }
-
-  function tintForPercent(pct) {
-    // 0% = dark slate, 100% = bright blue
-    const t = Math.max(0, Math.min(100, pct)) / 100;
-    const r = Math.round(26 + (53 - 26) * t);
-    const g = Math.round(31 + (95 - 31) * t);
-    const b = Math.round(42 + (173 - 42) * t);
-    return `rgb(${r}, ${g}, ${b})`;
-  }
-
-  function escapeHtml(str) {
-    return String(str)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  }
-
-  // events
   let inviteMode = false;
 
   function enableInviteHome(code) {
@@ -942,16 +948,16 @@
     }
   });
 
-  els.deckPhilosophical?.addEventListener("click", async () => {
+  els.deckClassic?.addEventListener("click", async () => {
     try {
-      await setDeckVersion("philosophical");
+      await setDeckVersion("classic");
     } catch (err) {
       toast(err.message || "Could not switch deck");
     }
   });
-  els.deckDirty?.addEventListener("click", async () => {
+  els.deckFunny?.addEventListener("click", async () => {
     try {
-      await setDeckVersion("dirty");
+      await setDeckVersion("funny");
     } catch (err) {
       toast(err.message || "Could not switch deck");
     }
@@ -966,5 +972,5 @@
     } else if (params.get("host") !== "1") {
       location.replace("/");
     }
-  })();
+  })().catch(console.error);
 })();

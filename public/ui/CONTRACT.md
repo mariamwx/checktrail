@@ -50,6 +50,21 @@ Required DOM ids / hooks. Renaming these breaks the game until `/public/logic` i
 - `charts`, `trait-list`, `body-figure` (SVG `.part` with `data-part`)
 - `toast`
 
+## Category 3 — `category3/index.html` (Feud)
+
+### Screens
+- `screen-home`, `screen-lobby`, `screen-play`, `screen-wait`, `screen-results`
+
+### Home / lobby
+- Same create/join pattern as Category 2
+- Host deck picker: `deck-picker`, `deck-classic`, `deck-funny`, `deck-badge`
+- `btn-start`, `lobby-hint`
+
+### Play / wait / results
+- `progress-chip`, `theme-chip`, `question-text`, `choice-grid` (buttons: `.choice`, `.choice-letter`, `.choice-text`)
+- `wait-copy`, `wait-stat`
+- `winner-board`, `charts`, `toast`
+
 ## Hub — `/` (`app/page.tsx`)
 
-Styled via `hub/hub.css`. Class names: `hub`, `hub-inner`, `hub-brand`, `hub-title`, `hub-sub`, `hub-grid`, `hub-card`, `hub-card--c1`, `hub-card--c2`, `hub-card-eyebrow`, `hub-card-name`, `hub-card-desc`.
+Styled via `hub/hub.css`. Class names: `hub`, `hub-inner`, `hub-brand`, `hub-title`, `hub-sub`, `hub-grid`, `hub-card`, `hub-card--c1`, `hub-card--c2`, `hub-card--c3`, `hub-card-eyebrow`, `hub-card-name`, `hub-card-desc`.
